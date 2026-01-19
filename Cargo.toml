@@ -1,0 +1,15 @@
+[package]
+name = "bevy_symbios"
+version = "0.1.0"
+edition = "2024"
+authors = ["Janus"]
+description = "Bevy integration for the Symbios L-System ecosystem."
+license = "MIT"
+
+[dependencies]
+bevy = "0.17.2"
+symbios = "0.1.1"
+symbios-turtle-3d = { path = "../symbios-turtle-3d", version = "0.1.0" }
+
+[dev-dependencies]
+glam = "0.30"
