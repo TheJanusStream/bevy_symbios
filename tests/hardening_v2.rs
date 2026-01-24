@@ -11,6 +11,11 @@ fn build_skeleton_from_points(points: Vec<Vec3>) -> Skeleton {
                 position: *p,
                 rotation: Quat::IDENTITY,
                 radius: 0.1,
+                color: Vec4::ONE,
+                material_id: 0,
+                roughness: 0.5,
+                metallic: 0.0,
+                texture_id: 0,
             },
             i == 0, // New strand on first point
         );
@@ -21,7 +26,6 @@ fn build_skeleton_from_points(points: Vec<Vec3>) -> Skeleton {
 #[test]
 fn test_singularity_robustness() {
     // A 180-degree turn: Up then Down.
-    // If the Parallel Transport frame fails here, the tube often collapses to 0 volume or twists 90 degrees.
     let points = vec![
         Vec3::ZERO,
         Vec3::Y,
@@ -30,21 +34,23 @@ fn test_singularity_robustness() {
     let s = build_skeleton_from_points(points);
 
     let builder = LSystemMeshBuilder::default();
-    let mesh = builder.build(&s);
+    let meshes = builder.build(&s);
+    let mesh = meshes.get(&0).expect("Mesh 0 not generated");
 
     // Check vertex count.
-    // 3 points = 3 rings. 8 resolution (default) = 9 verts per ring.
-    // Total = 27 vertices.
+    // 3 points = 2 segments.
+    // In multi-material mode, each segment generates 2 independent rings.
+    // 2 segments * 2 rings * 9 verts (8 res + 1 wrap) = 36 vertices.
     let positions = mesh
         .attribute(Mesh::ATTRIBUTE_POSITION)
         .unwrap()
         .as_float3()
         .unwrap();
-    assert_eq!(positions.len(), 27, "Singularity caused vertex dropout");
+    assert_eq!(positions.len(), 36, "Singularity caused vertex dropout");
 
     // Check for "Pinching".
-    // At the fold (index 1), the vertices should still be at radius distance from the center line.
-    // If the frame collapsed, they might be at (0, y, 0).
+    // Ring 1 (Index 9..18) corresponds to the top of the first segment (at Y).
+    // It should maintain radius distance from the central axis.
     let mid_ring_start = 9;
     for i in 0..9 {
         let pos = Vec3::from_array(positions[mid_ring_start + i]);
@@ -69,19 +75,16 @@ fn test_colinear_point_filtering() {
     let s = build_skeleton_from_points(points);
 
     let builder = LSystemMeshBuilder::default();
-    let mesh = builder.build(&s);
+    let meshes = builder.build(&s);
+    let mesh = meshes.get(&0).expect("Mesh 0 not generated");
 
-    // If logic works, it should treat this as a single segment from 0 to Y.
-    // 2 rings = 18 vertices.
-    // If it fails (treats 0->0 as valid), it might try to make 3 rings or NaN.
     let positions = mesh
         .attribute(Mesh::ATTRIBUTE_POSITION)
         .unwrap()
         .as_float3()
         .unwrap();
 
-    // We accept either filtering (18 verts) or robust handling (27 verts).
-    // The key is that positions are finite.
+    // We accept either filtering (18 verts) or robust handling.
     for pos in positions {
         assert!(
             Vec3::from_array(*pos).is_finite(),

@@ -8,8 +8,8 @@ license = "MIT"
 
 [dependencies]
 bevy = "0.17.2"
-symbios = "0.1.1"
-symbios-turtle-3d = { path = "../symbios-turtle-3d", version = "0.1.0" }
+symbios = "1.0.1"
+symbios-turtle-3d = { path = "../symbios-turtle-3d", version = "0.1.1" }
 
 [dev-dependencies]
 glam = "0.30"

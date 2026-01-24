@@ -4,10 +4,6 @@ use symbios_turtle_3d::{Skeleton, SkeletonPoint};
 
 #[test]
 fn test_180_degree_singularity() {
-    // The "Fold-Back" Problem.
-    // If a strand goes Up, then immediately Down, the tangent reverses (0,1,0) -> (0,-1,0).
-    // Parallel Transport frames often rely on cross products that vanish in this case.
-
     let mut s = Skeleton::new();
 
     // Point 0: Origin
@@ -16,6 +12,11 @@ fn test_180_degree_singularity() {
             position: Vec3::ZERO,
             rotation: Quat::IDENTITY,
             radius: 0.1,
+            color: Vec4::ONE,
+            material_id: 0,
+            roughness: 0.5,
+            metallic: 0.0,
+            texture_id: 0,
         },
         true,
     );
@@ -26,6 +27,11 @@ fn test_180_degree_singularity() {
             position: Vec3::new(0.0, 1.0, 0.0),
             rotation: Quat::IDENTITY,
             radius: 0.1,
+            color: Vec4::ONE,
+            material_id: 0,
+            roughness: 0.5,
+            metallic: 0.0,
+            texture_id: 0,
         },
         false,
     );
@@ -36,12 +42,18 @@ fn test_180_degree_singularity() {
             position: Vec3::ZERO,
             rotation: Quat::IDENTITY,
             radius: 0.1,
+            color: Vec4::ONE,
+            material_id: 0,
+            roughness: 0.5,
+            metallic: 0.0,
+            texture_id: 0,
         },
         false,
     );
 
     let builder = LSystemMeshBuilder::default();
-    let mesh = builder.build(&s);
+    let meshes = builder.build(&s);
+    let mesh = meshes.get(&0).expect("Mesh 0 not generated");
 
     // Verify we got a mesh
     let positions = mesh
@@ -68,6 +80,11 @@ fn test_zero_length_segment_collapse() {
             position: Vec3::ZERO,
             rotation: Quat::IDENTITY,
             radius: 0.1,
+            color: Vec4::ONE,
+            material_id: 0,
+            roughness: 0.5,
+            metallic: 0.0,
+            texture_id: 0,
         },
         true,
     );
@@ -76,21 +93,28 @@ fn test_zero_length_segment_collapse() {
             position: Vec3::ZERO,
             rotation: Quat::IDENTITY,
             radius: 0.1,
+            color: Vec4::ONE,
+            material_id: 0,
+            roughness: 0.5,
+            metallic: 0.0,
+            texture_id: 0,
         },
         false,
     );
 
     let builder = LSystemMeshBuilder::default();
-    let mesh = builder.build(&s);
+    let meshes = builder.build(&s);
 
-    // Should ideally be empty or handle it gracefully without NaN normals
-    if let Some(normals) = mesh.attribute(Mesh::ATTRIBUTE_NORMAL) {
-        let norms = normals.as_float3().unwrap();
-        for n in norms {
-            assert!(
-                !n[0].is_nan(),
-                "NaN normal generated from zero-length segment"
-            );
+    // If logic filters duplicates, this might result in empty mesh map or empty mesh
+    if let Some(mesh) = meshes.get(&0) {
+        if let Some(normals) = mesh.attribute(Mesh::ATTRIBUTE_NORMAL) {
+            let norms = normals.as_float3().unwrap();
+            for n in norms {
+                assert!(
+                    !n[0].is_nan(),
+                    "NaN normal generated from zero-length segment"
+                );
+            }
         }
     }
 }
