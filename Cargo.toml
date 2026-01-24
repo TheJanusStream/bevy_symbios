@@ -6,10 +6,16 @@ authors = ["Janus"]
 description = "Bevy integration for the Symbios L-System ecosystem."
 license = "MIT"
 
+[features]
+default = []
+physics = ["dep:avian3d"]
+
 [dependencies]
 bevy = "0.17.2"
 symbios = "1.0.1"
 symbios-turtle-3d = { path = "../symbios-turtle-3d", version = "0.1.1" }
+avian3d = { version = "0.4", optional = true }
 
 [dev-dependencies]
 glam = "0.30"
+avian3d = "0.4"
