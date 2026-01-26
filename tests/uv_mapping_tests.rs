@@ -262,3 +262,88 @@ fn test_uv_scale_multiplies_v_coordinate() {
         scaled_v
     );
 }
+
+#[test]
+fn test_uv_v_continuous_across_tapered_segments() {
+    // Two segments with different radii: the V coordinate at their shared boundary
+    // must be identical (no discontinuity from per-segment circumference scaling).
+    let mut s = Skeleton::new();
+    s.add_node(
+        SkeletonPoint {
+            position: Vec3::ZERO,
+            rotation: Quat::IDENTITY,
+            radius: 0.2, // Thick
+            color: Vec4::ONE,
+            material_id: 0,
+            uv_scale: 1.0,
+        },
+        true,
+    );
+    s.add_node(
+        SkeletonPoint {
+            position: Vec3::Y,
+            rotation: Quat::IDENTITY,
+            radius: 0.1, // Taper
+            color: Vec4::ONE,
+            material_id: 0,
+            uv_scale: 1.0,
+        },
+        false,
+    );
+    s.add_node(
+        SkeletonPoint {
+            position: Vec3::Y * 2.0,
+            rotation: Quat::IDENTITY,
+            radius: 0.05, // Thinner
+            color: Vec4::ONE,
+            material_id: 0,
+            uv_scale: 1.0,
+        },
+        false,
+    );
+
+    let builder = LSystemMeshBuilder::new().with_resolution(8);
+    let meshes = builder.build(&s);
+    let mesh = meshes.get(&0).unwrap();
+    let uvs = get_uvs(mesh);
+
+    // With vertex sharing and resolution=8, there are 3 rings of 9 vertices each.
+    // Ring 0: indices 0..9, Ring 1 (shared): indices 9..18, Ring 2: indices 18..27
+    assert_eq!(uvs.len(), 27, "3 shared rings * 9 verts = 27");
+
+    // V at ring 0 should be 0
+    assert!(
+        uvs[0][1].abs() < 0.001,
+        "V at start should be 0.0, got {}",
+        uvs[0][1]
+    );
+
+    // V should strictly increase across all rings
+    let v_ring0 = uvs[0][1];
+    let v_ring1 = uvs[9][1];
+    let v_ring2 = uvs[18][1];
+
+    assert!(
+        v_ring1 > v_ring0,
+        "V should increase: ring0={}, ring1={}",
+        v_ring0,
+        v_ring1
+    );
+    assert!(
+        v_ring2 > v_ring1,
+        "V should increase: ring1={}, ring2={}",
+        v_ring1,
+        v_ring2
+    );
+
+    // All vertices within the same ring must share the same V coordinate
+    for i in 0..9 {
+        assert!(
+            (uvs[9 + i][1] - v_ring1).abs() < 0.0001,
+            "Ring 1 vertex {} V mismatch: expected {}, got {}",
+            i,
+            v_ring1,
+            uvs[9 + i][1]
+        );
+    }
+}

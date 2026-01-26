@@ -36,15 +36,14 @@ fn test_singularity_robustness() {
     let mesh = meshes.get(&0).expect("Mesh 0 not generated");
 
     // Check vertex count.
-    // 3 points = 2 segments.
-    // In multi-material mode, each segment generates 2 independent rings.
-    // 2 segments * 2 rings * 9 verts (8 res + 1 wrap) = 36 vertices.
+    // 3 points = 2 segments with same material.
+    // With vertex sharing, the middle ring is reused: 3 rings * 9 verts = 27 vertices.
     let positions = mesh
         .attribute(Mesh::ATTRIBUTE_POSITION)
         .unwrap()
         .as_float3()
         .unwrap();
-    assert_eq!(positions.len(), 36, "Singularity caused vertex dropout");
+    assert_eq!(positions.len(), 27, "Singularity caused vertex dropout");
 
     // Check for "Pinching".
     // Ring 1 (Index 9..18) corresponds to the top of the first segment (at Y).

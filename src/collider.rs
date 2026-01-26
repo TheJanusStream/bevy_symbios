@@ -51,12 +51,29 @@ impl ColliderGenerator {
         self
     }
 
-    /// Generates capsule colliders from a skeleton.
+    /// Generates a single compound collider for the entire skeleton.
     ///
-    /// Returns a list of positioned colliders that can be spawned into the world.
-    /// Each collider corresponds to a segment in the skeleton that meets the
-    /// minimum radius threshold.
-    pub fn build(&self, skeleton: &Skeleton) -> Vec<PositionedCollider> {
+    /// Returns `None` if no valid segments exist (empty skeleton or all segments
+    /// below the minimum radius threshold). The compound collider contains one
+    /// child shape per qualifying segment, avoiding ECS entity bloat.
+    pub fn build(&self, skeleton: &Skeleton) -> Option<Collider> {
+        let parts = self.build_parts(skeleton);
+        if parts.is_empty() {
+            return None;
+        }
+        Some(Collider::compound(
+            parts
+                .into_iter()
+                .map(|p| (p.transform.translation, p.transform.rotation, p.collider))
+                .collect::<Vec<_>>(),
+        ))
+    }
+
+    /// Generates individual positioned colliders for each qualifying segment.
+    ///
+    /// Useful for debugging, visualization, or custom compound construction.
+    /// For most use cases, prefer [`build`] which returns a single compound collider.
+    pub fn build_parts(&self, skeleton: &Skeleton) -> Vec<PositionedCollider> {
         let mut colliders = Vec::new();
 
         for strand in &skeleton.strands {
@@ -116,12 +133,14 @@ impl ColliderGenerator {
             // We need to rotate from Y to our direction
             let rotation = Quat::from_rotation_arc(Vec3::Y, direction);
 
-            // Avian's capsule(radius, length) where length is the cylinder part
-            // Total height = length + 2*radius (caps on each end)
-            // We want total coverage = segment length, so cylinder length = segment_length - 2*radius
-            let cylinder_length = (length - 2.0 * avg_radius).max(0.0);
-
-            let collider = Collider::capsule(avg_radius, cylinder_length);
+            // For short segments (length < 2*radius), a capsule extends beyond the
+            // segment endpoints causing ghost collisions. Use a sphere instead.
+            let collider = if length < 2.0 * avg_radius {
+                Collider::sphere(avg_radius)
+            } else {
+                let cylinder_length = length - 2.0 * avg_radius;
+                Collider::capsule(avg_radius, cylinder_length)
+            };
 
             colliders.push(PositionedCollider {
                 transform: Transform::from_translation(center).with_rotation(rotation),

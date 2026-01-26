@@ -115,115 +115,126 @@ impl LSystemMeshBuilder {
     }
 
     fn process_strand(&mut self, points: &[SkeletonPoint]) {
-        // Filter out duplicate points (zero-length segments) to prevent NaNs
-        let filtered_points: Vec<&SkeletonPoint> = points
-            .windows(2)
-            .enumerate()
-            .filter_map(|(i, window)| {
-                if i == 0 {
-                    return Some(&window[0]);
+        // Filter out duplicate adjacent points (zero-length segments) to prevent NaNs.
+        // Build a list by keeping only points whose position differs from the last kept point.
+        let filtered: Vec<&SkeletonPoint> = {
+            let mut result = vec![&points[0]];
+            for point in &points[1..] {
+                let last = result.last().unwrap();
+                if last.position.distance_squared(point.position) > 0.000001 {
+                    result.push(point);
                 }
-                if window[0].position.distance_squared(window[1].position) > 0.000001 {
-                    Some(&window[1])
-                } else {
-                    None
-                }
-            })
-            .chain(std::iter::once(points.last().unwrap()))
-            .collect();
+            }
+            result
+        };
 
-        if filtered_points.len() < 2 {
+        if filtered.len() < 2 {
             return;
         }
 
-        let points = filtered_points;
-        let points_count = points.len();
+        let points = filtered;
+        let n = points.len();
 
-        let p0_pos = points[0].position;
-        let p1_pos = points[1].position;
-        let last_tangent = (p1_pos - p0_pos).normalize_or_zero();
+        // Phase 1: Compute per-point rotations via parallel transport.
+        // Each point gets its own rotation based on its miter tangent, enabling
+        // vertex sharing between consecutive same-material segments.
+        let rotations = {
+            let mut rots = Vec::with_capacity(n);
 
-        // Initial orientation
-        let mut current_rotation = points[0].rotation;
-        let initial_turtle_forward = current_rotation * Vec3::Y;
-        let initial_correction = Self::robust_rotation_arc(initial_turtle_forward, last_tangent);
-        current_rotation = initial_correction * current_rotation;
+            // Point 0: align turtle rotation with first segment tangent
+            let tangent_0 = (points[1].position - points[0].position).normalize_or_zero();
+            let mut rot = points[0].rotation;
+            let turtle_fwd = rot * Vec3::Y;
+            rot = Self::robust_rotation_arc(turtle_fwd, tangent_0) * rot;
+            rots.push(rot);
 
-        // Track cumulative arc length for UV V coordinate
-        let mut cumulative_length: f32 = 0.0;
+            // Points 1..N-1: use miter tangent (or endpoint tangent for last point)
+            for i in 1..n {
+                let tangent = if i < n - 1 {
+                    let v_in = (points[i].position - points[i - 1].position).normalize_or_zero();
+                    let v_out = (points[i + 1].position - points[i].position).normalize_or_zero();
+                    let sum = v_in + v_out;
+                    if sum.length_squared() < 0.001 {
+                        v_in
+                    } else {
+                        sum.normalize()
+                    }
+                } else {
+                    (points[i].position - points[i - 1].position).normalize_or_zero()
+                };
 
-        // Iterating Segments (i -> i+1)
-        for i in 0..points_count - 1 {
+                let fwd = rot * Vec3::Y;
+                let bend = Self::robust_rotation_arc(fwd, tangent);
+                rot = bend * rot;
+                rots.push(rot);
+            }
+
+            rots
+        };
+
+        // Phase 2: Compute per-point V coordinates using incremental accumulation.
+        // This ensures UV continuity across tapered segments where circumference varies.
+        let v_coords = {
+            let mut coords = Vec::with_capacity(n);
+            let mut cumulative_v = 0.0f32;
+            coords.push(0.0);
+
+            for i in 0..n - 1 {
+                let seg_len = points[i].position.distance(points[i + 1].position);
+                let avg_radius = (points[i].radius + points[i + 1].radius) * 0.5;
+                let circumference = avg_radius * std::f32::consts::TAU;
+                let v_scale = if circumference > 0.0001 {
+                    1.0 / circumference
+                } else {
+                    1.0
+                };
+                cumulative_v += seg_len * v_scale * points[i].uv_scale;
+                coords.push(cumulative_v);
+            }
+
+            coords
+        };
+
+        // Phase 3: Generate rings and connect, with vertex sharing.
+        // When consecutive segments share the same material ID, the top ring of
+        // segment N is reused as the bottom ring of segment N+1.
+        let mut ring_cache: Vec<Option<(u8, u32)>> = vec![None; n];
+
+        for i in 0..n - 1 {
             let curr = points[i];
             let next = points[i + 1];
-
-            // 1. Determine Bucket based on the start of the segment
             let mat_id = curr.material_id;
             let bucket = self.buckets.entry(mat_id).or_default();
 
-            // 2. Calculate Tangent & Rotation (Parallel Transport)
-            // Use Miter Tangent logic for smooth corners
-            let miter_tangent = if i == 0 {
-                (next.position - curr.position).normalize_or_zero()
-            } else {
-                let prev = points[i - 1];
-                let v_in = (curr.position - prev.position).normalize_or_zero();
-                let v_out = (next.position - curr.position).normalize_or_zero();
-                let sum = v_in + v_out;
-                if sum.length_squared() < 0.001 {
-                    v_in
-                } else {
-                    sum.normalize()
-                }
+            // Bottom ring: reuse cached ring if same material bucket already has one
+            let bottom_idx = match ring_cache[i] {
+                Some((cached_mat, idx)) if cached_mat == mat_id => idx,
+                _ => Self::add_ring(
+                    bucket,
+                    curr.position,
+                    rotations[i],
+                    curr.radius,
+                    curr.color,
+                    v_coords[i],
+                    self.resolution,
+                ),
             };
 
-            let current_forward = current_rotation * Vec3::Y;
-            let bend = Self::robust_rotation_arc(current_forward, miter_tangent);
-            current_rotation = bend * current_rotation;
-
-            // 3. Calculate UV V coordinates
-            // V is scaled by radius to maintain aspect ratio (prevent texture stretching)
-            let segment_length = curr.position.distance(next.position);
-            let avg_radius = (curr.radius + next.radius) * 0.5;
-            let circumference = avg_radius * std::f32::consts::TAU;
-            let v_scale = if circumference > 0.0001 {
-                1.0 / circumference
-            } else {
-                1.0
-            };
-
-            let v_start = cumulative_length * v_scale * curr.uv_scale;
-            let v_end = (cumulative_length + segment_length) * v_scale * next.uv_scale;
-
-            // 4. Generate Rings
-            // We generate BOTH rings for this segment in this bucket.
-            // This means vertices at boundaries are duplicated, which is necessary for split meshes.
-
-            let bottom_idx = Self::add_ring(
-                bucket,
-                curr.position,
-                current_rotation,
-                curr.radius,
-                curr.color,
-                v_start,
-                self.resolution,
-            );
-
+            // Top ring: always generate fresh
             let top_idx = Self::add_ring(
                 bucket,
                 next.position,
-                current_rotation,
+                rotations[i + 1],
                 next.radius,
                 next.color,
-                v_end,
+                v_coords[i + 1],
                 self.resolution,
             );
 
-            // 5. Connect
             Self::connect_rings(bucket, bottom_idx, top_idx, self.resolution);
 
-            // Update cumulative length for next segment
-            cumulative_length += segment_length;
+            // Cache the top ring for potential reuse by the next segment
+            ring_cache[i + 1] = Some((mat_id, top_idx));
         }
     }
 

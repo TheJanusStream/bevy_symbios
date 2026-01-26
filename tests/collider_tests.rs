@@ -33,38 +33,42 @@ fn make_simple_skeleton() -> Skeleton {
 fn test_basic_collider_generation() {
     let skeleton = make_simple_skeleton();
     let generator = ColliderGenerator::new();
-    let colliders = generator.build(&skeleton);
+    let parts = generator.build_parts(&skeleton);
 
     assert_eq!(
-        colliders.len(),
+        parts.len(),
         1,
         "Should generate one collider for one segment"
     );
 
-    let collider = &colliders[0];
-    assert!(
-        (collider.radius - 0.1).abs() < 0.001,
-        "Radius should be 0.1"
-    );
-    assert!(
-        (collider.length - 1.0).abs() < 0.001,
-        "Length should be 1.0"
-    );
+    let part = &parts[0];
+    assert!((part.radius - 0.1).abs() < 0.001, "Radius should be 0.1");
+    assert!((part.length - 1.0).abs() < 0.001, "Length should be 1.0");
 
     // Center should be at Y=0.5
-    let center = collider.transform.translation;
+    let center = part.transform.translation;
     assert!((center.y - 0.5).abs() < 0.001, "Center Y should be 0.5");
+
+    // Compound build should return Some
+    let compound = generator.build(&skeleton);
+    assert!(
+        compound.is_some(),
+        "Non-empty skeleton should produce a compound collider"
+    );
 }
 
 #[test]
 fn test_empty_skeleton_colliders() {
     let skeleton = Skeleton::new();
     let generator = ColliderGenerator::new();
-    let colliders = generator.build(&skeleton);
 
     assert!(
-        colliders.is_empty(),
-        "Empty skeleton should produce no colliders"
+        generator.build_parts(&skeleton).is_empty(),
+        "Empty skeleton should produce no collider parts"
+    );
+    assert!(
+        generator.build(&skeleton).is_none(),
+        "Empty skeleton should produce no compound collider"
     );
 }
 
@@ -122,23 +126,23 @@ fn test_min_radius_filtering() {
 
     // Without filtering: both segments
     let generator = ColliderGenerator::new();
-    let colliders = generator.build(&s);
+    let parts = generator.build_parts(&s);
     assert_eq!(
-        colliders.len(),
+        parts.len(),
         2,
         "Should generate 2 colliders without filtering"
     );
 
     // With filtering: only thick segment
     let generator = ColliderGenerator::new().with_min_radius(0.05);
-    let colliders = generator.build(&s);
+    let parts = generator.build_parts(&s);
     assert_eq!(
-        colliders.len(),
+        parts.len(),
         1,
         "Should generate 1 collider with min_radius=0.05"
     );
     assert!(
-        (colliders[0].radius - 0.1).abs() < 0.001,
+        (parts[0].radius - 0.1).abs() < 0.001,
         "Should keep thick segment"
     );
 }
@@ -172,13 +176,13 @@ fn test_collider_orientation() {
     );
 
     let generator = ColliderGenerator::new();
-    let colliders = generator.build(&s);
+    let parts = generator.build_parts(&s);
 
-    assert_eq!(colliders.len(), 1);
+    assert_eq!(parts.len(), 1);
 
-    let collider = &colliders[0];
+    let part = &parts[0];
     // The rotation should point Y axis toward X direction
-    let rotated_y = collider.transform.rotation * Vec3::Y;
+    let rotated_y = part.transform.rotation * Vec3::Y;
     assert!(
         (rotated_y - Vec3::X).length() < 0.001,
         "Collider Y axis should point along segment direction (X)"
@@ -225,19 +229,76 @@ fn test_multi_segment_strand() {
     );
 
     let generator = ColliderGenerator::new();
-    let colliders = generator.build(&s);
+    let parts = generator.build_parts(&s);
 
     assert_eq!(
-        colliders.len(),
+        parts.len(),
         2,
-        "Should generate 2 colliders for 2 segments"
+        "Should generate 2 collider parts for 2 segments"
     );
 
     // Check centers are at Y=0.5 and Y=1.5
-    let centers: Vec<f32> = colliders
-        .iter()
-        .map(|c| c.transform.translation.y)
-        .collect();
+    let centers: Vec<f32> = parts.iter().map(|c| c.transform.translation.y).collect();
     assert!(centers.iter().any(|&y| (y - 0.5).abs() < 0.001));
     assert!(centers.iter().any(|&y| (y - 1.5).abs() < 0.001));
+
+    // Compound build should produce a single collider
+    let compound = generator.build(&s);
+    assert!(
+        compound.is_some(),
+        "Multi-segment strand should produce a compound collider"
+    );
+}
+
+#[test]
+fn test_short_segment_uses_sphere() {
+    let mut s = Skeleton::new();
+
+    // Segment with length 0.1, radius 0.2 → length < 2*radius
+    s.add_node(
+        SkeletonPoint {
+            position: Vec3::ZERO,
+            rotation: Quat::IDENTITY,
+            radius: 0.2,
+            color: Vec4::ONE,
+            material_id: 0,
+            uv_scale: 1.0,
+        },
+        true,
+    );
+    s.add_node(
+        SkeletonPoint {
+            position: Vec3::new(0.0, 0.1, 0.0),
+            rotation: Quat::IDENTITY,
+            radius: 0.2,
+            color: Vec4::ONE,
+            material_id: 0,
+            uv_scale: 1.0,
+        },
+        false,
+    );
+
+    let generator = ColliderGenerator::new();
+    let parts = generator.build_parts(&s);
+
+    assert_eq!(
+        parts.len(),
+        1,
+        "Short segment should still produce a collider"
+    );
+    assert!(
+        (parts[0].length - 0.1).abs() < 0.001,
+        "Segment length should be 0.1"
+    );
+    assert!(
+        (parts[0].radius - 0.2).abs() < 0.001,
+        "Radius should be 0.2"
+    );
+
+    // Compound should also work
+    let compound = generator.build(&s);
+    assert!(
+        compound.is_some(),
+        "Short segment should produce a compound collider"
+    );
 }

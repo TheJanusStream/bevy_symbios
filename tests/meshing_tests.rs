@@ -81,3 +81,106 @@ fn test_topology_types_alignment() {
     let p_bevy = bevy::math::Vec3::new(1.0, 2.0, 3.0);
     assert_eq!(p_glam.x, p_bevy.x);
 }
+
+#[test]
+fn test_vertex_sharing_same_material() {
+    // 3 points, same material → 2 segments share the middle ring.
+    // Without sharing: 4 rings = 36 vertices. With sharing: 3 rings = 27 vertices.
+    let mut s = Skeleton::new();
+    s.add_node(
+        SkeletonPoint {
+            position: Vec3::ZERO,
+            rotation: Quat::IDENTITY,
+            radius: 0.1,
+            color: Vec4::ONE,
+            material_id: 0,
+            uv_scale: 1.0,
+        },
+        true,
+    );
+    s.add_node(
+        SkeletonPoint {
+            position: Vec3::Y,
+            rotation: Quat::IDENTITY,
+            radius: 0.1,
+            color: Vec4::ONE,
+            material_id: 0,
+            uv_scale: 1.0,
+        },
+        false,
+    );
+    s.add_node(
+        SkeletonPoint {
+            position: Vec3::Y * 2.0,
+            rotation: Quat::IDENTITY,
+            radius: 0.1,
+            color: Vec4::ONE,
+            material_id: 0,
+            uv_scale: 1.0,
+        },
+        false,
+    );
+
+    let meshes = LSystemMeshBuilder::default().build(&s);
+    let mesh = meshes.get(&0).unwrap();
+
+    // 3 unique rings * (8 resolution + 1 wrap) = 27 vertices
+    assert_eq!(
+        mesh.count_vertices(),
+        27,
+        "Vertex sharing should reduce 4 rings to 3"
+    );
+
+    // 2 segments * 8 quads * 2 triangles * 3 indices = 96 indices
+    assert_eq!(mesh.indices().unwrap().len(), 96);
+}
+
+#[test]
+fn test_no_vertex_sharing_across_materials() {
+    // 3 points, material changes at boundary → no sharing possible.
+    // Each segment gets 2 independent rings = 4 rings = 36 vertices.
+    let mut s = Skeleton::new();
+    s.add_node(
+        SkeletonPoint {
+            position: Vec3::ZERO,
+            rotation: Quat::IDENTITY,
+            radius: 0.1,
+            color: Vec4::ONE,
+            material_id: 0,
+            uv_scale: 1.0,
+        },
+        true,
+    );
+    s.add_node(
+        SkeletonPoint {
+            position: Vec3::Y,
+            rotation: Quat::IDENTITY,
+            radius: 0.1,
+            color: Vec4::ONE,
+            material_id: 1, // Different material for next segment
+            uv_scale: 1.0,
+        },
+        false,
+    );
+    s.add_node(
+        SkeletonPoint {
+            position: Vec3::Y * 2.0,
+            rotation: Quat::IDENTITY,
+            radius: 0.1,
+            color: Vec4::ONE,
+            material_id: 1,
+            uv_scale: 1.0,
+        },
+        false,
+    );
+
+    let meshes = LSystemMeshBuilder::default().build(&s);
+
+    // Material 0: 1 segment = 2 rings = 18 vertices
+    let mesh0 = meshes.get(&0).unwrap();
+    assert_eq!(mesh0.count_vertices(), 18);
+
+    // Material 1: 1 segment = 2 rings = 18 vertices
+    let mesh1 = meshes.get(&1).unwrap();
+    assert_eq!(mesh1.count_vertices(), 18);
+}
