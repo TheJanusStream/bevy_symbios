@@ -13,9 +13,7 @@ fn build_skeleton_from_points(points: Vec<Vec3>) -> Skeleton {
                 radius: 0.1,
                 color: Vec4::ONE,
                 material_id: 0,
-                roughness: 0.5,
-                metallic: 0.0,
-                texture_id: 0,
+                uv_scale: 1.0,
             },
             i == 0, // New strand on first point
         );

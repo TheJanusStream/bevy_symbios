@@ -7,7 +7,7 @@ Converts L-System skeletons into Bevy meshes and physics colliders for procedura
 ## Features
 
 - **Mesh Generation**: Smooth tube meshes from skeleton strands using parallel transport
-- **Multi-Material Support**: Separate meshes per material ID for varied materials (bark, leaves, etc.)
+- **Multi-Material Support**: Separate meshes per material ID for palette-driven PBR (bark, leaves, etc.)
 - **Vertex Colors**: Per-vertex RGBA colors from skeleton data
 - **UV Mapping**: Arc-length parameterized UVs with aspect-ratio preservation
 - **Physics Colliders** (optional): Capsule colliders for Avian3D physics
@@ -47,24 +47,50 @@ fn spawn_tree(
         .with_resolution(12)  // Vertices around tube circumference
         .build(&skeleton);
 
-    // Spawn each material's mesh
+    // Define a material palette: each material ID maps to PBR properties
+    let palette: Vec<StandardMaterial> = vec![
+        StandardMaterial {                       // ID 0: Bark
+            base_color: Color::WHITE,            // Tinted by vertex colors
+            perceptual_roughness: 0.9,
+            metallic: 0.0,
+            ..default()
+        },
+        StandardMaterial {                       // ID 1: Leaves
+            base_color: Color::WHITE,
+            perceptual_roughness: 0.6,
+            metallic: 0.1,
+            ..default()
+        },
+    ];
+
+    // Spawn each material's mesh with its palette entry
     for (material_id, mesh) in mesh_map {
-        let color = match material_id {
-            0 => Color::srgb(0.4, 0.3, 0.2),  // Bark
-            1 => Color::srgb(0.3, 0.6, 0.2),  // Leaves
-            _ => Color::WHITE,
-        };
+        let mat = palette
+            .get(material_id as usize)
+            .cloned()
+            .unwrap_or_default();
 
         commands.spawn((
             Mesh3d(meshes.add(mesh)),
-            MeshMaterial3d(materials.add(StandardMaterial {
-                base_color: color,
-                ..default()
-            })),
+            MeshMaterial3d(materials.add(mat)),
         ));
     }
 }
 ```
+
+### Multi-Material Workflow
+
+The material system separates **PBR surface properties** from **local color variation**:
+
+- **Material ID** (`SkeletonPoint::material_id`) — Selects a palette entry that defines
+  surface properties like roughness, metallic, and emissive. Each unique ID produces a
+  separate mesh, so different Bevy `StandardMaterial`s can be applied per group.
+- **Vertex Colors** (`SkeletonPoint::color`) — Baked into mesh vertices as `ATTRIBUTE_COLOR`.
+  These provide per-vertex tinting (e.g. darker bark at branch bases, lighter tips on
+  leaves) without needing additional materials or textures.
+
+Set `base_color: Color::WHITE` on your palette materials so vertex colors pass through
+unmodified. Any non-white base color will multiply with the vertex color.
 
 ### Physics Colliders
 
@@ -153,8 +179,8 @@ Generated meshes include:
 |-----------|-------------|
 | `POSITION` | Vertex positions |
 | `NORMAL` | Smooth normals |
-| `COLOR` | RGBA vertex colors from `SkeletonPoint::color` |
-| `UV_0` | Texture coordinates (U: around tube, V: along strand) |
+| `COLOR` | RGBA vertex colors for local tinting (`SkeletonPoint::color`) |
+| `UV_0` | Texture coordinates (U: around tube, V: along strand, scaled by `uv_scale`) |
 
 ## Compatibility
 

@@ -18,9 +18,7 @@ fn test_multi_material_bucket_generation() {
             radius: 0.1,
             color: Vec4::new(1.0, 0.0, 0.0, 1.0), // Red
             material_id: 0,
-            roughness: 0.5,
-            metallic: 0.0,
-            texture_id: 0,
+            uv_scale: 1.0,
         },
         true,
     );
@@ -35,9 +33,7 @@ fn test_multi_material_bucket_generation() {
             radius: 0.1,
             color: Vec4::new(1.0, 0.0, 0.0, 1.0),
             material_id: 1, // Determines material for NEXT segment
-            roughness: 0.5,
-            metallic: 0.0,
-            texture_id: 0,
+            uv_scale: 1.0,
         },
         false,
     );
@@ -49,9 +45,7 @@ fn test_multi_material_bucket_generation() {
             radius: 0.1,
             color: Vec4::new(0.0, 1.0, 0.0, 1.0), // Green
             material_id: 1,
-            roughness: 0.5,
-            metallic: 0.0,
-            texture_id: 0,
+            uv_scale: 1.0,
         },
         false,
     );

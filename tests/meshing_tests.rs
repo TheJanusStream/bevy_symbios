@@ -14,9 +14,7 @@ fn make_simple_skeleton() -> Skeleton {
             radius: 0.1,
             color: Vec4::ONE,
             material_id: 0,
-            roughness: 0.5,
-            metallic: 0.0,
-            texture_id: 0,
+            uv_scale: 1.0,
         },
         true,
     );
@@ -27,9 +25,7 @@ fn make_simple_skeleton() -> Skeleton {
             radius: 0.1,
             color: Vec4::ONE,
             material_id: 0,
-            roughness: 0.5,
-            metallic: 0.0,
-            texture_id: 0,
+            uv_scale: 1.0,
         },
         false,
     );

@@ -48,6 +48,7 @@ impl MeshData {
 /// - **Vertex colors**: Per-vertex colors from [`SkeletonPoint::color`] are included.
 /// - **UV mapping**: Arc-length parameterized UVs with aspect-ratio preservation.
 ///   U wraps around the tube (0.0 to 1.0), V increases along the strand.
+///   V is scaled by each point's [`SkeletonPoint::uv_scale`] factor.
 /// - **Smooth geometry**: Parallel transport prevents tube twisting at bends.
 ///
 /// # Example
@@ -191,8 +192,8 @@ impl LSystemMeshBuilder {
                 1.0
             };
 
-            let v_start = cumulative_length * v_scale;
-            let v_end = (cumulative_length + segment_length) * v_scale;
+            let v_start = cumulative_length * v_scale * curr.uv_scale;
+            let v_end = (cumulative_length + segment_length) * v_scale * next.uv_scale;
 
             // 4. Generate Rings
             // We generate BOTH rings for this segment in this bucket.
@@ -208,16 +209,10 @@ impl LSystemMeshBuilder {
                 self.resolution,
             );
 
-            // For the top ring, we use the same rotation (flat shading approximation for segment)
-            // Ideally we'd interpolate, but for L-Systems, segment-based rotation is standard.
-            // Actually, we should probably check if we need to bend *again* for the next segment?
-            // Standard PT typically updates rotation *at* the joint.
-            // Here `current_rotation` represents the frame at `curr`.
-
             let top_idx = Self::add_ring(
                 bucket,
                 next.position,
-                current_rotation, // Use same rotation for top of cylinder segment
+                current_rotation,
                 next.radius,
                 next.color,
                 v_end,

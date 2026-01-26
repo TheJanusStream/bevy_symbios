@@ -20,9 +20,7 @@ fn test_uv_coordinates_present() {
             radius: 0.1,
             color: Vec4::ONE,
             material_id: 0,
-            roughness: 0.5,
-            metallic: 0.0,
-            texture_id: 0,
+            uv_scale: 1.0,
         },
         true,
     );
@@ -33,9 +31,7 @@ fn test_uv_coordinates_present() {
             radius: 0.1,
             color: Vec4::ONE,
             material_id: 0,
-            roughness: 0.5,
-            metallic: 0.0,
-            texture_id: 0,
+            uv_scale: 1.0,
         },
         false,
     );
@@ -62,9 +58,7 @@ fn test_uv_u_wraps_around() {
             radius: 0.1,
             color: Vec4::ONE,
             material_id: 0,
-            roughness: 0.5,
-            metallic: 0.0,
-            texture_id: 0,
+            uv_scale: 1.0,
         },
         true,
     );
@@ -75,9 +69,7 @@ fn test_uv_u_wraps_around() {
             radius: 0.1,
             color: Vec4::ONE,
             material_id: 0,
-            roughness: 0.5,
-            metallic: 0.0,
-            texture_id: 0,
+            uv_scale: 1.0,
         },
         false,
     );
@@ -115,9 +107,7 @@ fn test_uv_v_increases_with_length() {
             radius: 0.1,
             color: Vec4::ONE,
             material_id: 0,
-            roughness: 0.5,
-            metallic: 0.0,
-            texture_id: 0,
+            uv_scale: 1.0,
         },
         true,
     );
@@ -128,9 +118,7 @@ fn test_uv_v_increases_with_length() {
             radius: 0.1,
             color: Vec4::ONE,
             material_id: 0,
-            roughness: 0.5,
-            metallic: 0.0,
-            texture_id: 0,
+            uv_scale: 1.0,
         },
         false,
     );
@@ -170,9 +158,7 @@ fn test_uv_no_nans() {
             radius: 0.001, // Very small radius
             color: Vec4::ONE,
             material_id: 0,
-            roughness: 0.5,
-            metallic: 0.0,
-            texture_id: 0,
+            uv_scale: 1.0,
         },
         true,
     );
@@ -183,9 +169,7 @@ fn test_uv_no_nans() {
             radius: 0.001,
             color: Vec4::ONE,
             material_id: 0,
-            roughness: 0.5,
-            metallic: 0.0,
-            texture_id: 0,
+            uv_scale: 1.0,
         },
         false,
     );
@@ -204,4 +188,77 @@ fn test_uv_no_nans() {
             uv
         );
     }
+}
+
+#[test]
+fn test_uv_scale_multiplies_v_coordinate() {
+    let scale = 3.0_f32;
+
+    // Build a baseline mesh with uv_scale=1.0
+    let mut s1 = Skeleton::new();
+    s1.add_node(
+        SkeletonPoint {
+            position: Vec3::ZERO,
+            rotation: Quat::IDENTITY,
+            radius: 0.1,
+            color: Vec4::ONE,
+            material_id: 0,
+            uv_scale: 1.0,
+        },
+        true,
+    );
+    s1.add_node(
+        SkeletonPoint {
+            position: Vec3::Y,
+            rotation: Quat::IDENTITY,
+            radius: 0.1,
+            color: Vec4::ONE,
+            material_id: 0,
+            uv_scale: 1.0,
+        },
+        false,
+    );
+    let baseline_v = {
+        let meshes = LSystemMeshBuilder::default().build(&s1);
+        let uvs = get_uvs(meshes.get(&0).unwrap());
+        uvs[9][1] // V of first vertex in second ring
+    };
+
+    // Build a scaled mesh with uv_scale=3.0
+    let mut s2 = Skeleton::new();
+    s2.add_node(
+        SkeletonPoint {
+            position: Vec3::ZERO,
+            rotation: Quat::IDENTITY,
+            radius: 0.1,
+            color: Vec4::ONE,
+            material_id: 0,
+            uv_scale: scale,
+        },
+        true,
+    );
+    s2.add_node(
+        SkeletonPoint {
+            position: Vec3::Y,
+            rotation: Quat::IDENTITY,
+            radius: 0.1,
+            color: Vec4::ONE,
+            material_id: 0,
+            uv_scale: scale,
+        },
+        false,
+    );
+    let scaled_v = {
+        let meshes = LSystemMeshBuilder::default().build(&s2);
+        let uvs = get_uvs(meshes.get(&0).unwrap());
+        uvs[9][1]
+    };
+
+    assert!(
+        (scaled_v - baseline_v * scale).abs() < 0.001,
+        "uv_scale={} should multiply V: expected ~{}, got {}",
+        scale,
+        baseline_v * scale,
+        scaled_v
+    );
 }
