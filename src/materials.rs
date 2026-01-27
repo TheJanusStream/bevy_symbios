@@ -226,10 +226,7 @@ pub fn setup_material_assets(
     );
     proc_textures.insert(
         TextureType::Noise,
-        images.add(create_image(
-            generate_noise_texture(TEX_SIZE, 42),
-            TEX_SIZE,
-        )),
+        images.add(create_image(generate_noise_texture(TEX_SIZE, 42), TEX_SIZE)),
     );
     proc_textures.insert(
         TextureType::Checker,

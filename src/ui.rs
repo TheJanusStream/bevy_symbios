@@ -50,24 +50,16 @@ pub fn material_palette_editor(
                     .changed();
             });
             mat_changed |= ui
-                .add(
-                    egui::Slider::new(&mut local_emission_strength, 0.0..=10.0).text("Glow"),
-                )
+                .add(egui::Slider::new(&mut local_emission_strength, 0.0..=10.0).text("Glow"))
                 .changed();
             mat_changed |= ui
-                .add(
-                    egui::Slider::new(&mut local_roughness, 0.0..=1.0).text("Roughness"),
-                )
+                .add(egui::Slider::new(&mut local_roughness, 0.0..=1.0).text("Roughness"))
                 .changed();
             mat_changed |= ui
-                .add(
-                    egui::Slider::new(&mut local_metallic, 0.0..=1.0).text("Metallic"),
-                )
+                .add(egui::Slider::new(&mut local_metallic, 0.0..=1.0).text("Metallic"))
                 .changed();
             mat_changed |= ui
-                .add(
-                    egui::Slider::new(&mut local_uv_scale, 0.1..=10.0).text("UV Scale"),
-                )
+                .add(egui::Slider::new(&mut local_uv_scale, 0.1..=10.0).text("UV Scale"))
                 .changed();
 
             ui.horizontal(|ui| {

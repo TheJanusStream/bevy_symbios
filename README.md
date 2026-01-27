@@ -123,25 +123,71 @@ fn spawn_with_colliders(
 This crate works with skeletons from the [symbios-turtle-3d](https://crates.io/crates/symbios-turtle-3d) interpreter:
 
 ```rust
-use symbios::{LSystem, Parser};
-use bevy_symbios::symbios_turtle_3d::{Interpreter3D, Skeleton};
+use symbios::System;
+use symbios_turtle_3d::{TurtleConfig, TurtleInterpreter};
+use bevy_symbios::LSystemMeshBuilder;
 
-// Parse L-System grammar
-let grammar = r#"
-    axiom: F
-    rules:
-      F -> F[+F]F[-F]F
-"#;
-let lsystem = Parser::parse(grammar).unwrap();
+// Parse and derive an L-System
+let mut sys = System::new();
+sys.set_axiom("F").unwrap();
+sys.add_rule("p1: F -> F[+F]F[-F]F").unwrap();
+sys.derive(4).unwrap();
 
-// Generate string after iterations
-let expanded = lsystem.expand(4);
-
-// Interpret as 3D skeleton
-let mut interpreter = Interpreter3D::new();
-let skeleton: Skeleton = interpreter.interpret(&expanded);
+// Interpret derived state as a 3D skeleton
+let mut interpreter = TurtleInterpreter::new(TurtleConfig::default());
+interpreter.populate_standard_symbols(&sys.interner);
+let skeleton = interpreter.build_skeleton(&sys.state);
 
 // Now use LSystemMeshBuilder to create meshes
+let meshes = LSystemMeshBuilder::new()
+    .with_resolution(8)
+    .build(&skeleton);
+```
+
+### Material Palette System
+
+The `materials` module provides a palette-first PBR workflow with live editing support:
+
+```rust
+use bevy::prelude::*;
+use bevy_symbios::materials::{
+    MaterialSettingsMap, MaterialPalette,
+    setup_material_assets, sync_material_properties,
+};
+
+// In your app setup:
+app.init_resource::<MaterialSettingsMap>()
+    .add_systems(Startup, setup_material_assets)
+    .add_systems(Update, sync_material_properties);
+```
+
+`MaterialSettingsMap` holds editable settings for up to 3 materials (base color, emission, roughness, metallic, texture type, UV scale). `sync_material_properties` updates the Bevy `StandardMaterial` handles in `MaterialPalette` each frame without requiring geometry rebuilds.
+
+### Material Palette Editor (requires `egui` feature)
+
+```toml
+bevy_symbios = { version = "0.1", features = ["egui"] }
+```
+
+```rust
+use bevy_symbios::ui::material_palette_editor;
+
+// Inside an egui panel:
+material_palette_editor(ui, &mut material_settings.settings);
+```
+
+### Export
+
+The `export` module converts meshes to OBJ and GLB (binary glTF) formats:
+
+```rust
+use bevy_symbios::export::{mesh_to_obj, meshes_to_glb, ExportFormat};
+
+// OBJ string from a single mesh
+let obj_string = mesh_to_obj(&mesh, "tree", 0, 1);
+
+// GLB binary with embedded PBR materials
+let glb_bytes = meshes_to_glb(&mesh_map, &material_settings, "tree");
 ```
 
 ## API Reference
@@ -182,11 +228,20 @@ Generated meshes include:
 | `COLOR` | RGBA vertex colors for local tinting (`SkeletonPoint::color`) |
 | `UV_0` | Texture coordinates (U: around tube, V: along strand, scaled by `uv_scale`) |
 
+## Ecosystem
+
+```
+symbios (derivation engine)
+  └── symbios-turtle-3d (3D interpreter)
+        └── bevy_symbios (Bevy meshes, materials, export, UI)
+              └── lsystem-explorer (interactive application)
+```
+
 ## Compatibility
 
-| bevy_symbios | Bevy | Avian3D |
-|--------------|------|---------|
-| 0.1.x | 0.17 | 0.4 |
+| bevy_symbios | Bevy | symbios | symbios-turtle-3d | Avian3D |
+|--------------|------|---------|--------------------|---------|
+| 0.1.x | 0.17 | 1.0 | 0.1 | 0.4 |
 
 ## License
 
