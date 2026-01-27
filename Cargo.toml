@@ -9,12 +9,14 @@ license = "MIT"
 [features]
 default = []
 physics = ["dep:avian3d"]
+egui = ["dep:bevy_egui"]
 
 [dependencies]
 bevy = "0.17.2"
 symbios = { path = "../symbios", version = "1.0.2" }
 symbios-turtle-3d = { path = "../symbios-turtle-3d", version = "0.1.1" }
 avian3d = { version = "0.4", optional = true }
+bevy_egui = { version = "0.38.0", optional = true }
 
 [dev-dependencies]
 glam = "0.30"
