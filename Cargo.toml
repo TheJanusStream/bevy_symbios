@@ -5,6 +5,10 @@ edition = "2024"
 authors = ["Janus"]
 description = "Bevy integration for the Symbios L-System ecosystem."
 license = "MIT"
+readme = "README.md"
+repository = "https://github.com/TheJanusStream/bevy_symbios"
+keywords = ["lsystem", "procedural", "generative", "simulation"]
+categories = ["simulation", "game-development", "mathematics"]
 
 [features]
 default = []
@@ -13,8 +17,8 @@ egui = ["dep:bevy_egui"]
 
 [dependencies]
 bevy = "0.17.2"
-symbios = { path = "../symbios", version = "1.0.2" }
-symbios-turtle-3d = { path = "../symbios-turtle-3d", version = "0.1.1" }
+symbios = "1.0.2" 
+symbios-turtle-3d = "0.1.1"
 avian3d = { version = "0.4", optional = true }
 bevy_egui = { version = "0.38.0", optional = true }
 
