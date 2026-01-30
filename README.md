@@ -241,7 +241,7 @@ symbios (derivation engine)
 
 | bevy_symbios | Bevy | symbios | symbios-turtle-3d | Avian3D |
 |--------------|------|---------|--------------------|---------|
-| 0.1.x | 0.17 | 1.0 | 0.1 | 0.4 |
+| 0.1.x | 0.17 | 1.0 | 0.2 | 0.4 |
 
 ## License
 
