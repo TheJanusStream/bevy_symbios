@@ -35,6 +35,10 @@ impl MeshData {
     }
 }
 
+/// Maximum allowed tube resolution to prevent memory exhaustion.
+/// 128 vertices per ring is more than sufficient for smooth tubes.
+const MAX_RESOLUTION: u32 = 128;
+
 /// Converts L-System skeletons into Bevy meshes.
 ///
 /// Generates smooth tube geometry from [`Skeleton`] strands using parallel transport
@@ -88,9 +92,16 @@ impl LSystemMeshBuilder {
     /// Sets the number of vertices around each ring of the tube.
     ///
     /// Higher values produce smoother tubes but increase vertex count.
-    /// Minimum value is 3 (triangular cross-section). Default is 8.
+    /// Minimum value is 3 (triangular cross-section), maximum is 128.
+    /// Values outside this range are clamped with a warning. Default is 8.
     pub fn with_resolution(mut self, res: u32) -> Self {
-        self.resolution = res.max(3);
+        if res > MAX_RESOLUTION {
+            warn!(
+                "Mesh resolution {} exceeds maximum of {}; clamping to {}",
+                res, MAX_RESOLUTION, MAX_RESOLUTION
+            );
+        }
+        self.resolution = res.clamp(3, MAX_RESOLUTION);
         self
     }
 

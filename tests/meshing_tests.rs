@@ -184,3 +184,24 @@ fn test_no_vertex_sharing_across_materials() {
     let mesh1 = meshes.get(&1).unwrap();
     assert_eq!(mesh1.count_vertices(), 18);
 }
+
+#[test]
+fn test_resolution_clamping() {
+    let skeleton = make_simple_skeleton();
+
+    // Excessive resolution should be clamped to MAX_RESOLUTION (128)
+    let meshes_high = LSystemMeshBuilder::new()
+        .with_resolution(1_000_000)
+        .build(&skeleton);
+    let mesh_high = meshes_high.get(&0).unwrap();
+    // 2 rings * (128 resolution + 1 wrap) = 258 vertices
+    assert_eq!(mesh_high.count_vertices(), 258, "Should clamp to max 128");
+
+    // Low resolution should be clamped to minimum 3
+    let meshes_low = LSystemMeshBuilder::new()
+        .with_resolution(1)
+        .build(&skeleton);
+    let mesh_low = meshes_low.get(&0).unwrap();
+    // 2 rings * (3 resolution + 1 wrap) = 8 vertices
+    assert_eq!(mesh_low.count_vertices(), 8, "Should clamp to min 3");
+}
