@@ -278,10 +278,11 @@ pub fn setup_material_assets(
 /// [`MaterialPalette`]'s `StandardMaterial` handles.
 ///
 /// Uses Bevy's change detection — only processes when [`MaterialSettingsMap`]
-/// has been mutated since the last run.
+/// has been mutated since the last run. Automatically creates new material
+/// handles for IDs that don't yet exist in the palette.
 pub fn sync_material_properties(
     material_settings: Res<MaterialSettingsMap>,
-    palette: Res<MaterialPalette>,
+    mut palette: ResMut<MaterialPalette>,
     proc_textures: Res<ProceduralTextures>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
@@ -290,10 +291,12 @@ pub fn sync_material_properties(
     }
 
     for (mat_id, settings) in &material_settings.settings {
-        let Some(handle) = palette.materials.get(mat_id) else {
-            continue;
-        };
-        let Some(mat) = materials.get_mut(handle) else {
+        let handle = palette
+            .materials
+            .entry(*mat_id)
+            .or_insert_with(|| materials.add(StandardMaterial::default()))
+            .clone();
+        let Some(mat) = materials.get_mut(&handle) else {
             continue;
         };
 
