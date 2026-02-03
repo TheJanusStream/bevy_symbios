@@ -18,14 +18,14 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-bevy_symbios = "0.1"
+bevy_symbios = "0.2"
 ```
 
 For physics support with [Avian3D](https://github.com/Jondolf/avian):
 
 ```toml
 [dependencies]
-bevy_symbios = { version = "0.1", features = ["physics"] }
+bevy_symbios = { version = "0.2", features = ["physics"] }
 ```
 
 ## Usage
@@ -166,7 +166,7 @@ app.init_resource::<MaterialSettingsMap>()
 ### Material Palette Editor (requires `egui` feature)
 
 ```toml
-bevy_symbios = { version = "0.1", features = ["egui"] }
+bevy_symbios = { version = "0.2", features = ["egui"] }
 ```
 
 ```rust
@@ -236,12 +236,6 @@ symbios (derivation engine)
         └── bevy_symbios (Bevy meshes, materials, export, UI)
               └── lsystem-explorer (interactive application)
 ```
-
-## Compatibility
-
-| bevy_symbios | Bevy | symbios | symbios-turtle-3d | Avian3D |
-|--------------|------|---------|--------------------|---------|
-| 0.1.x | 0.17 | 1.0 | 0.2 | 0.4 |
 
 ## License
 
