@@ -74,3 +74,9 @@ pub use collider::{ColliderGenerator, PositionedCollider};
 
 /// Re-export of `symbios_turtle_3d` for version compatibility.
 pub use symbios_turtle_3d;
+
+#[cfg(feature = "robot")]
+pub mod robot;
+
+#[cfg(feature = "robot")]
+pub use robot::spawn_robot;

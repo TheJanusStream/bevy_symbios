@@ -6,3 +6,4 @@ Cargo.lock
 CHANGELOG.md
 bevy-symbios-primer.sh
 bevy_symbios_primer_*
+.mcp.json
