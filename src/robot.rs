@@ -3,14 +3,25 @@ use avian3d::prelude::*;
 use bevy::prelude::*;
 use symbios_robot::{JointType, RobotBlueprint, ShapePrimitive};
 
+/// Entities spawned by [`spawn_robot`], returned so callers can parent or tag them.
+pub struct SpawnedRobot {
+    /// Module (rigid body) entities, in blueprint iteration order.
+    pub modules: Vec<Entity>,
+    /// Joint constraint entities, in blueprint iteration order.
+    /// Each entry is `(entity, joint_type)`.
+    pub joints: Vec<(Entity, JointType)>,
+}
+
 pub fn spawn_robot(
     commands: &mut Commands,
     blueprint: &RobotBlueprint,
     palette: &MaterialPalette,
     meshes: &mut Assets<Mesh>,
     spawn_location: Transform,
-) {
+) -> SpawnedRobot {
     let mut entity_map = bevy::platform::collections::HashMap::new();
+    let mut module_entities = Vec::new();
+    let mut joint_entities = Vec::new();
 
     // 1. Spawn Modules (Rigid Bodies)
     for (mod_id, module) in &blueprint.modules {
@@ -55,6 +66,7 @@ pub fn spawn_robot(
             .id();
 
         entity_map.insert(*mod_id, entity);
+        module_entities.push(entity);
 
         for sensor in &module.sensors {
             commands
@@ -76,13 +88,13 @@ pub fn spawn_robot(
             .get(&joint_def.child_id)
             .expect("Child module missing");
 
-        match joint_def.joint_type {
+        let joint_entity = match joint_def.joint_type {
             JointType::Fixed => {
                 commands.spawn(
                     FixedJoint::new(parent_entity, child_entity)
                         .with_local_anchor1(joint_def.anchor_parent)
                         .with_local_anchor2(joint_def.anchor_child),
-                );
+                ).id()
             }
             JointType::Hinge => {
                 let mut joint = RevoluteJoint::new(parent_entity, child_entity)
@@ -92,26 +104,22 @@ pub fn spawn_robot(
 
                 if let Some(limit) = &joint_def.limits {
                     joint = joint.with_angle_limits(limit.min, limit.max);
-                    
-                    // Native Motor Configuration (Angular)
-                    // We assume the joint has a `.with_motor()` or `.with_angular_motor()` builder.
-                    // Given the error "AngularMotor is not a component", it must be a field on the joint.
+
                     let motor = AngularMotor::default()
-                        .with_max_torque(limit.effort) // Note: Avian often uses 'force' generically or 'torque'
+                        .with_max_torque(limit.effort)
                         .with_target_velocity(limit.velocity);
-                    
-                    // Applying the motor to the joint struct
+
                     joint.motor = motor;
                 }
 
-                commands.spawn(joint);
+                commands.spawn(joint).id()
             }
             JointType::Ball => {
                 commands.spawn(
                     SphericalJoint::new(parent_entity, child_entity)
                         .with_local_anchor1(joint_def.anchor_parent)
                         .with_local_anchor2(joint_def.anchor_child),
-                );
+                ).id()
             }
             JointType::Prismatic => {
                 let mut joint = PrismaticJoint::new(parent_entity, child_entity)
@@ -122,17 +130,21 @@ pub fn spawn_robot(
                 if let Some(limit) = &joint_def.limits {
                     joint = joint.with_limits(limit.min, limit.max);
 
-                    // Native Motor Configuration (Linear)
                     let motor = LinearMotor::default()
                         .with_max_force(limit.effort)
                         .with_target_velocity(limit.velocity);
-                        
-                    // Applying the motor to the joint struct
+
                     joint.motor = motor;
                 }
-                
-                commands.spawn(joint);
+
+                commands.spawn(joint).id()
             }
-        }
+        };
+        joint_entities.push((joint_entity, joint_def.joint_type));
+    }
+
+    SpawnedRobot {
+        modules: module_entities,
+        joints: joint_entities,
     }
 }
