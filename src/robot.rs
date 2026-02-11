@@ -58,7 +58,7 @@ pub fn spawn_robot(
             .spawn((
                 RigidBody::Dynamic,
                 collider,
-                MassPropertiesBundle::from_shape(&Collider::cuboid(1.0, 1.0, 1.0), module.mass),
+                Mass(module.mass),
                 Mesh3d(mesh_handle),
                 MeshMaterial3d(material),
                 initial_transform,
