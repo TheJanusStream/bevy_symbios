@@ -1,7 +1,17 @@
 use crate::materials::MaterialPalette;
 use avian3d::prelude::*;
 use bevy::prelude::*;
-use symbios_robot::{JointType, RobotBlueprint, ShapePrimitive};
+use symbios_robot::{JointType, RobotBlueprint, SensorType, ShapePrimitive};
+
+/// Marker: this module entity has an IMU sensor.
+/// The IMU reads pitch and roll from the entity's `Transform`.
+#[derive(Component)]
+pub struct ImuSensor;
+
+/// Marker: this module entity has a Touch sensor.
+/// Touch reads ground contact from `CollidingEntities`.
+#[derive(Component)]
+pub struct TouchSensor;
 
 /// Entities spawned by [`spawn_robot`], returned so callers can parent or tag them.
 pub struct SpawnedRobot {
@@ -10,6 +20,9 @@ pub struct SpawnedRobot {
     /// Joint constraint entities, in blueprint iteration order.
     /// Each entry is `(entity, joint_type)`.
     pub joints: Vec<(Entity, JointType)>,
+    /// Module entities that carry sensors, sorted by `ModuleId`.
+    /// Each entry is `(module_entity, sensor_type)`.
+    pub sensors: Vec<(Entity, SensorType)>,
 }
 
 pub fn spawn_robot(
@@ -22,9 +35,14 @@ pub fn spawn_robot(
     let mut entity_map = bevy::platform::collections::HashMap::new();
     let mut module_entities = Vec::new();
     let mut joint_entities = Vec::new();
+    let mut sensor_entries = Vec::new();
+
+    // Sort modules by ModuleId for deterministic sensor ordering.
+    let mut sorted_modules: Vec<_> = blueprint.modules.iter().collect();
+    sorted_modules.sort_by_key(|(id, _)| *id);
 
     // 1. Spawn Modules (Rigid Bodies)
-    for (mod_id, module) in &blueprint.modules {
+    for (mod_id, module) in &sorted_modules {
         let (pos, rot) = module.transform;
 
         let initial_transform =
@@ -69,13 +87,17 @@ pub fn spawn_robot(
         module_entities.push(entity);
 
         for sensor in &module.sensors {
-            commands
-                .spawn((
-                    Transform::from_translation(sensor.local_position)
-                        .with_rotation(sensor.local_rotation),
-                    Name::new(format!("Sensor_{:?}", sensor.sensor_type)),
-                ))
-                .set_parent_in_place(entity);
+            match sensor.sensor_type {
+                SensorType::IMU => {
+                    commands.entity(entity).insert(ImuSensor);
+                    sensor_entries.push((entity, SensorType::IMU));
+                }
+                SensorType::Touch => {
+                    commands.entity(entity).insert(TouchSensor);
+                    sensor_entries.push((entity, SensorType::Touch));
+                }
+                _ => {}
+            }
         }
     }
 
@@ -146,5 +168,6 @@ pub fn spawn_robot(
     SpawnedRobot {
         modules: module_entities,
         joints: joint_entities,
+        sensors: sensor_entries,
     }
 }

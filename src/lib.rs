@@ -79,4 +79,4 @@ pub use symbios_turtle_3d;
 pub mod robot;
 
 #[cfg(feature = "robot")]
-pub use robot::{SpawnedRobot, spawn_robot};
+pub use robot::{ImuSensor, SpawnedRobot, TouchSensor, spawn_robot};
