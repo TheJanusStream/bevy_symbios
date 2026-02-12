@@ -72,11 +72,14 @@ pub fn spawn_robot(
             .unwrap_or(&palette.primary_material)
             .clone();
 
+        let mass_props =
+            MassPropertiesBundle::from_shape(&module.shape.to_bevy_primitive(), module.density);
+
         let entity = commands
             .spawn((
                 RigidBody::Dynamic,
                 collider,
-                Mass(module.mass),
+                mass_props,
                 Mesh3d(mesh_handle),
                 MeshMaterial3d(material),
                 initial_transform,
@@ -111,13 +114,13 @@ pub fn spawn_robot(
             .expect("Child module missing");
 
         let joint_entity = match joint_def.joint_type {
-            JointType::Fixed => {
-                commands.spawn(
+            JointType::Fixed => commands
+                .spawn(
                     FixedJoint::new(parent_entity, child_entity)
                         .with_local_anchor1(joint_def.anchor_parent)
                         .with_local_anchor2(joint_def.anchor_child),
-                ).id()
-            }
+                )
+                .id(),
             JointType::Hinge => {
                 let mut joint = RevoluteJoint::new(parent_entity, child_entity)
                     .with_local_anchor1(joint_def.anchor_parent)
@@ -136,13 +139,13 @@ pub fn spawn_robot(
 
                 commands.spawn(joint).id()
             }
-            JointType::Ball => {
-                commands.spawn(
+            JointType::Ball => commands
+                .spawn(
                     SphericalJoint::new(parent_entity, child_entity)
                         .with_local_anchor1(joint_def.anchor_parent)
                         .with_local_anchor2(joint_def.anchor_child),
-                ).id()
-            }
+                )
+                .id(),
             JointType::Prismatic => {
                 let mut joint = PrismaticJoint::new(parent_entity, child_entity)
                     .with_local_anchor1(joint_def.anchor_parent)
