@@ -32,7 +32,8 @@ pub fn spawn_robot(
     meshes: &mut Assets<Mesh>,
     spawn_location: Transform,
 ) -> SpawnedRobot {
-    let mut entity_map = bevy::platform::collections::HashMap::new();
+    let mut entity_map: bevy::platform::collections::HashMap<_, (Entity, Quat)> =
+        bevy::platform::collections::HashMap::new();
     let mut module_entities = Vec::new();
     let mut joint_entities = Vec::new();
     let mut sensor_entries = Vec::new();
@@ -86,7 +87,7 @@ pub fn spawn_robot(
             ))
             .id();
 
-        entity_map.insert(*mod_id, entity);
+        entity_map.insert(*mod_id, (entity, rot));
         module_entities.push(entity);
 
         for sensor in &module.sensors {
@@ -106,25 +107,33 @@ pub fn spawn_robot(
 
     // 2. Spawn Joints with Native Motors (Avian Main Branch)
     for joint_def in &blueprint.joints {
-        let parent_entity = *entity_map
+        let &(parent_entity, parent_rot) = entity_map
             .get(&joint_def.parent_id)
             .expect("Parent module missing");
-        let child_entity = *entity_map
+        let &(child_entity, child_rot) = entity_map
             .get(&joint_def.child_id)
             .expect("Child module missing");
+
+        // Compute the rest-pose relative rotation so the joint solver
+        // preserves the intended orientation between modules.
+        // Without this, all joints default to identity basis, forcing
+        // connected bodies toward the same world orientation.
+        let child_rest_basis = child_rot.inverse() * parent_rot;
 
         let joint_entity = match joint_def.joint_type {
             JointType::Fixed => commands
                 .spawn(
                     FixedJoint::new(parent_entity, child_entity)
                         .with_local_anchor1(joint_def.anchor_parent)
-                        .with_local_anchor2(joint_def.anchor_child),
+                        .with_local_anchor2(joint_def.anchor_child)
+                        .with_local_basis2(child_rest_basis),
                 )
                 .id(),
             JointType::Hinge => {
                 let mut joint = RevoluteJoint::new(parent_entity, child_entity)
                     .with_local_anchor1(joint_def.anchor_parent)
                     .with_local_anchor2(joint_def.anchor_child)
+                    .with_local_basis2(child_rest_basis)
                     .with_hinge_axis(joint_def.axis);
 
                 if let Some(limit) = &joint_def.limits {
@@ -143,13 +152,15 @@ pub fn spawn_robot(
                 .spawn(
                     SphericalJoint::new(parent_entity, child_entity)
                         .with_local_anchor1(joint_def.anchor_parent)
-                        .with_local_anchor2(joint_def.anchor_child),
+                        .with_local_anchor2(joint_def.anchor_child)
+                        .with_local_basis2(child_rest_basis),
                 )
                 .id(),
             JointType::Prismatic => {
                 let mut joint = PrismaticJoint::new(parent_entity, child_entity)
                     .with_local_anchor1(joint_def.anchor_parent)
                     .with_local_anchor2(joint_def.anchor_child)
+                    .with_local_basis2(child_rest_basis)
                     .with_slider_axis(joint_def.axis);
 
                 if let Some(limit) = &joint_def.limits {
