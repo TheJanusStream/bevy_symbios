@@ -8,24 +8,41 @@
 //!
 //! 1. Add [`setup_material_assets`] as a `Startup` system to create textures and palette.
 //! 2. Insert [`MaterialSettingsMap`] as a resource (or use `init_resource`).
-//! 3. Add [`sync_material_properties`] to your `Update` schedule to keep materials in sync.
+//! 3. Add [`sync_material_properties`] and [`apply_foliage_textures`] to your `Update` schedule.
 //! 4. Mutate [`MaterialSettingsMap`] from your UI or game logic; the sync system detects
 //!    changes automatically via Bevy's change detection.
 
+use bevy::asset::RenderAssetUsages;
 use bevy::image::{ImageAddressMode, ImageSampler, ImageSamplerDescriptor};
 use bevy::math::{Affine2, Vec2};
 use bevy::platform::collections::HashMap;
 use bevy::prelude::*;
-use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
+use bevy::render::render_resource::{Extent3d, Face, TextureDimension, TextureFormat};
+use bevy::tasks::{AsyncComputeTaskPool, Task, block_on, futures_lite::future};
+use bevy_symbios_texture::bark::{BarkConfig, BarkGenerator};
+use bevy_symbios_texture::generator::{TextureGenerator, TextureMap, TextureError};
+use bevy_symbios_texture::leaf::{LeafConfig, LeafGenerator};
+use bevy_symbios_texture::twig::{TwigConfig, TwigGenerator};
+use bevy_symbios_texture::{map_to_images, map_to_images_card, GeneratedHandles};
+
+pub use bevy_symbios_texture::bark::BarkConfig as BarkTexConfig;
+pub use bevy_symbios_texture::leaf::LeafConfig as LeafTexConfig;
+pub use bevy_symbios_texture::twig::TwigConfig as TwigTexConfig;
 
 /// Available procedural texture types for materials.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, serde::Serialize, serde::Deserialize)]
 pub enum TextureType {
     #[default]
     None,
     Grid,
     Noise,
     Checker,
+    /// Procedural leaf silhouette card (alpha-masked, clamp-to-edge).
+    Leaf,
+    /// Procedural twig composite card (alpha-masked, clamp-to-edge).
+    Twig,
+    /// Procedural tileable bark texture.
+    Bark,
 }
 
 impl TextureType {
@@ -34,6 +51,9 @@ impl TextureType {
         TextureType::Grid,
         TextureType::Noise,
         TextureType::Checker,
+        TextureType::Leaf,
+        TextureType::Twig,
+        TextureType::Bark,
     ];
 
     pub fn name(&self) -> &'static str {
@@ -42,7 +62,15 @@ impl TextureType {
             TextureType::Grid => "Grid",
             TextureType::Noise => "Noise",
             TextureType::Checker => "Checker",
+            TextureType::Leaf => "Leaf",
+            TextureType::Twig => "Twig",
+            TextureType::Bark => "Bark",
         }
+    }
+
+    /// Returns `true` for foliage card types that need alpha-mask rendering.
+    pub fn is_foliage_card(self) -> bool {
+        matches!(self, TextureType::Leaf | TextureType::Twig)
     }
 }
 
@@ -56,6 +84,12 @@ pub struct MaterialSettings {
     pub metallic: f32,
     pub texture: TextureType,
     pub uv_scale: f32,
+    /// Config for procedural leaf texture (active when `texture == TextureType::Leaf`).
+    pub leaf_config: LeafConfig,
+    /// Config for procedural twig texture (active when `texture == TextureType::Twig`).
+    pub twig_config: TwigConfig,
+    /// Config for procedural bark texture (active when `texture == TextureType::Bark`).
+    pub bark_config: BarkConfig,
 }
 
 impl Default for MaterialSettings {
@@ -68,6 +102,9 @@ impl Default for MaterialSettings {
             metallic: 0.0,
             texture: TextureType::None,
             uv_scale: 1.0,
+            leaf_config: LeafConfig::default(),
+            twig_config: TwigConfig::default(),
+            bark_config: BarkConfig::default(),
         }
     }
 }
@@ -92,6 +129,7 @@ impl Default for MaterialSettingsMap {
                 metallic: 0.8,
                 texture: TextureType::None,
                 uv_scale: 1.0,
+                ..Default::default()
             },
         );
 
@@ -105,6 +143,7 @@ impl Default for MaterialSettingsMap {
                 metallic: 0.0,
                 texture: TextureType::None,
                 uv_scale: 1.0,
+                ..Default::default()
             },
         );
 
@@ -118,6 +157,7 @@ impl Default for MaterialSettingsMap {
                 metallic: 0.0,
                 texture: TextureType::None,
                 uv_scale: 1.0,
+                ..Default::default()
             },
         );
 
@@ -133,14 +173,23 @@ pub struct MaterialPalette {
     pub primary_material: Handle<StandardMaterial>,
 }
 
-/// Stores procedural texture handles for material customization.
+/// Stores procedural texture handles for simple (non-async) material customization.
 #[derive(Resource)]
 pub struct ProceduralTextures {
     pub textures: HashMap<TextureType, Handle<Image>>,
 }
 
+/// Tracks in-flight async foliage texture generation tasks.
+///
+/// Keyed by material ID. Each entry holds the background task and whether the
+/// result should be uploaded with card (clamp-to-edge) or tile (repeat) samplers.
+#[derive(Resource, Default)]
+pub struct FoliageTextureTasks {
+    tasks: HashMap<u8, (Task<Result<TextureMap, TextureError>>, bool)>,
+}
+
 // ---------------------------------------------------------------------------
-// Procedural texture generators
+// Procedural texture generators (simple/inline)
 // ---------------------------------------------------------------------------
 
 fn generate_grid_texture(size: u32, line_width: u32) -> Vec<u8> {
@@ -193,7 +242,7 @@ fn create_image(data: Vec<u8>, size: u32) -> Image {
         TextureDimension::D2,
         data,
         TextureFormat::Rgba8UnormSrgb,
-        default(),
+        RenderAssetUsages::default(),
     );
     image.sampler = ImageSampler::Descriptor(ImageSamplerDescriptor {
         address_mode_u: ImageAddressMode::Repeat,
@@ -209,9 +258,8 @@ fn create_image(data: Vec<u8>, size: u32) -> Image {
 
 /// Startup system that creates procedural textures and a default material palette.
 ///
-/// Inserts [`ProceduralTextures`] and [`MaterialPalette`] resources.
-/// Pair with [`sync_material_properties`] in your update schedule to keep
-/// materials in sync with [`MaterialSettingsMap`].
+/// Inserts [`ProceduralTextures`], [`MaterialPalette`], and [`FoliageTextureTasks`] resources.
+/// Pair with [`sync_material_properties`] and [`apply_foliage_textures`] in your update schedule.
 pub fn setup_material_assets(
     mut commands: Commands,
     mut materials: ResMut<Assets<StandardMaterial>>,
@@ -239,6 +287,7 @@ pub fn setup_material_assets(
     commands.insert_resource(ProceduralTextures {
         textures: proc_textures,
     });
+    commands.insert_resource(FoliageTextureTasks::default());
 
     let mut palette = HashMap::new();
 
@@ -277,18 +326,22 @@ pub fn setup_material_assets(
 /// Update system that synchronizes [`MaterialSettingsMap`] values to the
 /// [`MaterialPalette`]'s `StandardMaterial` handles.
 ///
-/// Uses Bevy's change detection — only processes when [`MaterialSettingsMap`]
-/// has been mutated since the last run. Automatically creates new material
-/// handles for IDs that don't yet exist in the palette.
+/// For simple procedural textures (Grid, Noise, Checker) the handle is applied
+/// immediately.  For foliage textures (Leaf, Twig, Bark) an async generation
+/// task is spawned into [`FoliageTextureTasks`]; call [`apply_foliage_textures`]
+/// each frame to collect results and update the material.
 pub fn sync_material_properties(
     material_settings: Res<MaterialSettingsMap>,
     mut palette: ResMut<MaterialPalette>,
     proc_textures: Res<ProceduralTextures>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut foliage_tasks: ResMut<FoliageTextureTasks>,
 ) {
     if !material_settings.is_changed() {
         return;
     }
+
+    let pool = AsyncComputeTaskPool::get();
 
     for (mat_id, settings) in &material_settings.settings {
         let handle = palette
@@ -308,11 +361,105 @@ pub fn sync_material_properties(
             * settings.emission_strength;
         mat.emissive = emission_linear;
 
-        mat.base_color_texture = match settings.texture {
-            TextureType::None => None,
-            other => proc_textures.textures.get(&other).cloned(),
+        mat.uv_transform = Affine2::from_scale(Vec2::splat(settings.uv_scale));
+
+        match settings.texture {
+            TextureType::None => {
+                mat.base_color_texture = None;
+                mat.normal_map_texture = None;
+                mat.alpha_mode = AlphaMode::Opaque;
+                mat.double_sided = false;
+                mat.cull_mode = Some(Face::Back);
+            }
+            TextureType::Grid | TextureType::Noise | TextureType::Checker => {
+                mat.base_color_texture =
+                    proc_textures.textures.get(&settings.texture).cloned();
+                mat.normal_map_texture = None;
+                mat.alpha_mode = AlphaMode::Opaque;
+                mat.double_sided = false;
+                mat.cull_mode = Some(Face::Back);
+            }
+            TextureType::Leaf => {
+                // Apply alpha-mask settings immediately; texture arrives async.
+                mat.alpha_mode = AlphaMode::Mask(0.5);
+                mat.double_sided = true;
+                mat.cull_mode = None;
+
+                let config = settings.leaf_config.clone();
+                let task = pool.spawn(async move {
+                    LeafGenerator::new(config).generate(512, 512)
+                });
+                foliage_tasks.tasks.insert(*mat_id, (task, true));
+            }
+            TextureType::Twig => {
+                mat.alpha_mode = AlphaMode::Mask(0.5);
+                mat.double_sided = true;
+                mat.cull_mode = None;
+
+                let config = settings.twig_config.clone();
+                let task = pool.spawn(async move {
+                    TwigGenerator::new(config).generate(512, 512)
+                });
+                foliage_tasks.tasks.insert(*mat_id, (task, true));
+            }
+            TextureType::Bark => {
+                mat.alpha_mode = AlphaMode::Opaque;
+                mat.double_sided = false;
+                mat.cull_mode = Some(Face::Back);
+
+                let config = settings.bark_config.clone();
+                let task = pool.spawn(async move {
+                    BarkGenerator::new(config).generate(512, 512)
+                });
+                foliage_tasks.tasks.insert(*mat_id, (task, false));
+            }
+        }
+    }
+}
+
+/// Update system that polls completed foliage texture tasks and applies the
+/// generated handles to the corresponding [`StandardMaterial`].
+///
+/// Must run after [`sync_material_properties`] in the same schedule.
+pub fn apply_foliage_textures(
+    mut foliage_tasks: ResMut<FoliageTextureTasks>,
+    palette: Res<MaterialPalette>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut images: ResMut<Assets<Image>>,
+) {
+    let mut finished = Vec::new();
+
+    for (mat_id, (task, is_card)) in foliage_tasks.tasks.iter_mut() {
+        if let Some(result) = block_on(future::poll_once(task)) {
+            finished.push((*mat_id, result, *is_card));
+        }
+    }
+
+    for (mat_id, result, is_card) in finished {
+        foliage_tasks.tasks.remove(&mat_id);
+
+        let map = match result {
+            Ok(m) => m,
+            Err(e) => {
+                bevy::log::error!("Foliage texture generation failed for mat {mat_id}: {e}");
+                continue;
+            }
         };
 
-        mat.uv_transform = Affine2::from_scale(Vec2::splat(settings.uv_scale));
+        let handles: GeneratedHandles = if is_card {
+            map_to_images_card(map, &mut images)
+        } else {
+            map_to_images(map, &mut images)
+        };
+
+        let Some(mat_handle) = palette.materials.get(&mat_id) else {
+            continue;
+        };
+        let Some(mat) = materials.get_mut(mat_handle) else {
+            continue;
+        };
+
+        mat.base_color_texture = Some(handles.albedo);
+        mat.normal_map_texture = Some(handles.normal);
     }
 }

@@ -22,6 +22,8 @@ symbios = "1.4"
 symbios-turtle-3d = { path = "../symbios-turtle-3d" }
 symbios-robot = { path = "../symbios-robot", optional = true }
 bevy_egui = { version = "0.39", optional = true }
+bevy_symbios_texture = { path = "../bevy_symbios_texture" }
+serde = { version = "1.0", features = ["derive"] }
 
 [dependencies.avian3d]
 git = "https://github.com/avianphysics/avian"
