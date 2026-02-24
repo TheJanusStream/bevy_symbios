@@ -31,6 +31,7 @@ impl MeshData {
         mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, self.colors.clone());
         mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, self.uvs.clone());
         mesh.insert_indices(Indices::U32(self.indices.clone()));
+        let _ = mesh.generate_tangents();
         mesh
     }
 }
