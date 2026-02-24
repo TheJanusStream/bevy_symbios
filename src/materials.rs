@@ -183,9 +183,16 @@ pub struct ProceduralTextures {
 ///
 /// Keyed by material ID. Each entry holds the background task and whether the
 /// result should be uploaded with card (clamp-to-edge) or tile (repeat) samplers.
+///
+/// `pending_type` records the texture type of the currently running task so that
+/// `sync_material_properties` can skip re-spawning while a same-type task is
+/// already in flight.  It is cleared when the task completes so the next config
+/// change triggers a fresh generation.
 #[derive(Resource, Default)]
 pub struct FoliageTextureTasks {
     tasks: HashMap<u8, (Task<Result<TextureMap, TextureError>>, bool)>,
+    /// Texture type of the currently pending task per material ID.
+    pending_type: HashMap<u8, TextureType>,
 }
 
 // ---------------------------------------------------------------------------
@@ -367,17 +374,23 @@ pub fn sync_material_properties(
             TextureType::None => {
                 mat.base_color_texture = None;
                 mat.normal_map_texture = None;
+                mat.metallic_roughness_texture = None;
                 mat.alpha_mode = AlphaMode::Opaque;
                 mat.double_sided = false;
                 mat.cull_mode = Some(Face::Back);
+                foliage_tasks.tasks.remove(mat_id);
+                foliage_tasks.pending_type.remove(mat_id);
             }
             TextureType::Grid | TextureType::Noise | TextureType::Checker => {
                 mat.base_color_texture =
                     proc_textures.textures.get(&settings.texture).cloned();
                 mat.normal_map_texture = None;
+                mat.metallic_roughness_texture = None;
                 mat.alpha_mode = AlphaMode::Opaque;
                 mat.double_sided = false;
                 mat.cull_mode = Some(Face::Back);
+                foliage_tasks.tasks.remove(mat_id);
+                foliage_tasks.pending_type.remove(mat_id);
             }
             TextureType::Leaf => {
                 // Apply alpha-mask settings immediately; texture arrives async.
@@ -385,33 +398,43 @@ pub fn sync_material_properties(
                 mat.double_sided = true;
                 mat.cull_mode = None;
 
-                let config = settings.leaf_config.clone();
-                let task = pool.spawn(async move {
-                    LeafGenerator::new(config).generate(512, 512)
-                });
-                foliage_tasks.tasks.insert(*mat_id, (task, true));
+                // Only spawn if no same-type task is already in flight.
+                if foliage_tasks.pending_type.get(mat_id) != Some(&TextureType::Leaf) {
+                    let config = settings.leaf_config.clone();
+                    let task = pool.spawn(async move {
+                        LeafGenerator::new(config).generate(512, 512)
+                    });
+                    foliage_tasks.tasks.insert(*mat_id, (task, true));
+                    foliage_tasks.pending_type.insert(*mat_id, TextureType::Leaf);
+                }
             }
             TextureType::Twig => {
                 mat.alpha_mode = AlphaMode::Mask(0.5);
                 mat.double_sided = true;
                 mat.cull_mode = None;
 
-                let config = settings.twig_config.clone();
-                let task = pool.spawn(async move {
-                    TwigGenerator::new(config).generate(512, 512)
-                });
-                foliage_tasks.tasks.insert(*mat_id, (task, true));
+                if foliage_tasks.pending_type.get(mat_id) != Some(&TextureType::Twig) {
+                    let config = settings.twig_config.clone();
+                    let task = pool.spawn(async move {
+                        TwigGenerator::new(config).generate(512, 512)
+                    });
+                    foliage_tasks.tasks.insert(*mat_id, (task, true));
+                    foliage_tasks.pending_type.insert(*mat_id, TextureType::Twig);
+                }
             }
             TextureType::Bark => {
                 mat.alpha_mode = AlphaMode::Opaque;
                 mat.double_sided = false;
                 mat.cull_mode = Some(Face::Back);
 
-                let config = settings.bark_config.clone();
-                let task = pool.spawn(async move {
-                    BarkGenerator::new(config).generate(512, 512)
-                });
-                foliage_tasks.tasks.insert(*mat_id, (task, false));
+                if foliage_tasks.pending_type.get(mat_id) != Some(&TextureType::Bark) {
+                    let config = settings.bark_config.clone();
+                    let task = pool.spawn(async move {
+                        BarkGenerator::new(config).generate(512, 512)
+                    });
+                    foliage_tasks.tasks.insert(*mat_id, (task, false));
+                    foliage_tasks.pending_type.insert(*mat_id, TextureType::Bark);
+                }
             }
         }
     }
@@ -421,9 +444,12 @@ pub fn sync_material_properties(
 /// generated handles to the corresponding [`StandardMaterial`].
 ///
 /// Must run after [`sync_material_properties`] in the same schedule.
+///
+/// Marks [`MaterialPalette`] as changed whenever any texture is applied so that
+/// downstream systems (e.g. prop-material caches) know to refresh their copies.
 pub fn apply_foliage_textures(
     mut foliage_tasks: ResMut<FoliageTextureTasks>,
-    palette: Res<MaterialPalette>,
+    mut palette: ResMut<MaterialPalette>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut images: ResMut<Assets<Image>>,
 ) {
@@ -435,8 +461,14 @@ pub fn apply_foliage_textures(
         }
     }
 
+    if finished.is_empty() {
+        return;
+    }
+
     for (mat_id, result, is_card) in finished {
         foliage_tasks.tasks.remove(&mat_id);
+        // Clear pending marker so the next config change can spawn a fresh task.
+        foliage_tasks.pending_type.remove(&mat_id);
 
         let map = match result {
             Ok(m) => m,
@@ -452,7 +484,7 @@ pub fn apply_foliage_textures(
             map_to_images(map, &mut images)
         };
 
-        let Some(mat_handle) = palette.materials.get(&mat_id) else {
+        let Some(mat_handle) = palette.bypass_change_detection().materials.get(&mat_id) else {
             continue;
         };
         let Some(mat) = materials.get_mut(mat_handle) else {
@@ -461,5 +493,10 @@ pub fn apply_foliage_textures(
 
         mat.base_color_texture = Some(handles.albedo);
         mat.normal_map_texture = Some(handles.normal);
+        mat.metallic_roughness_texture = Some(handles.roughness);
     }
+
+    // Signal downstream systems (like prop-material caches) that the underlying
+    // palette material assets have changed, without modifying the palette itself.
+    palette.set_changed();
 }

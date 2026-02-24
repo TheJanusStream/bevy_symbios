@@ -15,12 +15,18 @@ use crate::materials::{MaterialSettings, TextureType};
 /// texture type is active — the corresponding [`LeafConfig`], [`TwigConfig`], or
 /// [`BarkConfig`] parameters.
 ///
-/// Returns `true` if any material property was modified.
+/// Returns `true` if any material property was modified in a way that requires
+/// texture regeneration (PBR changes apply immediately; foliage config changes
+/// commit only when the slider drag ends, preventing excessive re-generation).
+///
+/// The caller is responsible for writing back to `settings` only when needed.
+/// Config values are always written back to prevent visual slider snap-back during
+/// drag; the return value indicates whether texture regeneration is needed.
 pub fn material_palette_editor(
     ui: &mut egui::Ui,
     settings: &mut HashMap<u8, MaterialSettings>,
 ) -> bool {
-    let mut any_changed = false;
+    let mut any_regen = false;
 
     let mut mat_ids: Vec<u8> = settings.keys().copied().collect();
     mat_ids.sort();
@@ -41,29 +47,33 @@ pub fn material_palette_editor(
         let mut local_twig = current.twig_config.clone();
         let mut local_bark = current.bark_config.clone();
 
-        let mut mat_changed = false;
+        // mat_regen: triggers texture regeneration (set_changed for sync_material_properties)
+        // mat_writeback: slider value changed visually but regen not yet needed (prevents snap-back)
+        let mut mat_regen = false;
+        let mut mat_writeback = false;
 
         ui.collapsing(format!("Material {}", mat_id), |ui| {
+            // PBR properties: instant regen on any change.
             ui.horizontal(|ui| {
                 ui.label("Base Color:");
-                mat_changed |= ui.color_edit_button_rgb(&mut local_base_color).changed();
+                mat_regen |= ui.color_edit_button_rgb(&mut local_base_color).changed();
             });
             ui.horizontal(|ui| {
                 ui.label("Emission:");
-                mat_changed |= ui
+                mat_regen |= ui
                     .color_edit_button_rgb(&mut local_emission_color)
                     .changed();
             });
-            mat_changed |= ui
+            mat_regen |= ui
                 .add(egui::Slider::new(&mut local_emission_strength, 0.0..=10.0).text("Glow"))
                 .changed();
-            mat_changed |= ui
+            mat_regen |= ui
                 .add(egui::Slider::new(&mut local_roughness, 0.0..=1.0).text("Roughness"))
                 .changed();
-            mat_changed |= ui
+            mat_regen |= ui
                 .add(egui::Slider::new(&mut local_metallic, 0.0..=1.0).text("Metallic"))
                 .changed();
-            mat_changed |= ui
+            mat_regen |= ui
                 .add(egui::Slider::new(&mut local_uv_scale, 0.1..=10.0).text("UV Scale"))
                 .changed();
 
@@ -78,28 +88,38 @@ pub fn material_palette_editor(
                                 .clicked()
                             {
                                 local_texture = *tex_type;
-                                mat_changed = true;
+                                mat_regen = true;
                             }
                         }
                     });
             });
 
-            // Foliage-specific parameter editors
+            // Foliage-specific parameter editors.
+            // These return (writeback, regen): writeback is true during drag (prevents snap-back),
+            // regen is true only when the drag commits (drag_stopped or non-drag change).
             match local_texture {
                 TextureType::Leaf => {
-                    mat_changed |= leaf_config_editor(ui, &mut local_leaf, mat_id);
+                    let (wb, regen) = leaf_config_editor(ui, &mut local_leaf, mat_id);
+                    mat_writeback |= wb;
+                    mat_regen |= regen;
                 }
                 TextureType::Twig => {
-                    mat_changed |= twig_config_editor(ui, &mut local_twig, mat_id);
+                    let (wb, regen) = twig_config_editor(ui, &mut local_twig, mat_id);
+                    mat_writeback |= wb;
+                    mat_regen |= regen;
                 }
                 TextureType::Bark => {
-                    mat_changed |= bark_config_editor(ui, &mut local_bark, mat_id);
+                    let (wb, regen) = bark_config_editor(ui, &mut local_bark, mat_id);
+                    mat_writeback |= wb;
+                    mat_regen |= regen;
                 }
                 _ => {}
             }
         });
 
-        if mat_changed {
+        // Always write back when any widget changed (including mid-drag) to prevent
+        // slider snap-back on the next frame.
+        if mat_regen || mat_writeback {
             if let Some(s) = settings.get_mut(&mat_id) {
                 s.base_color = local_base_color;
                 s.emission_color = local_emission_color;
@@ -112,162 +132,247 @@ pub fn material_palette_editor(
                 s.twig_config = local_twig;
                 s.bark_config = local_bark;
             }
-            any_changed = true;
+        }
+
+        if mat_regen {
+            any_regen = true;
         }
     }
 
-    any_changed
+    any_regen
 }
 
+/// Returns `(writeback, regen)`:
+/// - `writeback`: a slider value changed during drag (write back to prevent snap-back)
+/// - `regen`: a value committed (drag ended or non-drag change) — texture should regenerate
 fn leaf_config_editor(
     ui: &mut egui::Ui,
     cfg: &mut bevy_symbios_texture::leaf::LeafConfig,
     mat_id: u8,
-) -> bool {
-    let mut changed = false;
+) -> (bool, bool) {
+    let mut writeback = false;
+    let mut regen = false;
     ui.collapsing(format!("Leaf Config##lc_{mat_id}"), |ui| {
+        // Color pickers: instant regen.
         ui.horizontal(|ui| {
             ui.label("Base Color:");
-            changed |= ui.color_edit_button_rgb(&mut cfg.color_base).changed();
+            let r = ui.color_edit_button_rgb(&mut cfg.color_base);
+            writeback |= r.changed();
+            regen |= r.changed();
         });
         ui.horizontal(|ui| {
             ui.label("Edge Color:");
-            changed |= ui.color_edit_button_rgb(&mut cfg.color_edge).changed();
+            let r = ui.color_edit_button_rgb(&mut cfg.color_edge);
+            writeback |= r.changed();
+            regen |= r.changed();
         });
-        changed |= ui
-            .add(
-                egui::Slider::new(&mut cfg.serration_strength, 0.0..=0.5)
-                    .text("Serration"),
-            )
-            .changed();
-        changed |= ui
-            .add(egui::Slider::new(&mut cfg.vein_angle, 1.0..=5.0).text("Vein Angle"))
-            .changed();
-        changed |= ui
-            .add(
-                egui::Slider::new(&mut cfg.vein_count, 2.0..=12.0)
-                    .text("Vein Count"),
-            )
-            .changed();
-        changed |= ui
-            .add(
-                egui::Slider::new(&mut cfg.lobe_count, 0.0..=6.0)
-                    .text("Lobe Count"),
-            )
-            .changed();
-        changed |= ui
-            .add(
-                egui::Slider::new(&mut cfg.lobe_depth, 0.0..=1.0)
-                    .text("Lobe Depth"),
-            )
-            .changed();
-        changed |= ui
-            .add(
-                egui::Slider::new(&mut cfg.micro_detail, 0.0..=1.0)
-                    .text("Micro Detail"),
-            )
-            .changed();
-        changed |= ui
-            .add(
-                egui::Slider::new(&mut cfg.normal_strength, 0.0..=8.0)
-                    .text("Normal Strength"),
-            )
-            .changed();
-        changed |= ui
-            .add(
-                egui::Slider::new(&mut cfg.petiole_length, 0.0..=0.3)
-                    .text("Petiole"),
-            )
-            .changed();
+        // Sliders: write back on any change, regen only when committed.
+        slider_debounced(
+            ui,
+            egui::Slider::new(&mut cfg.serration_strength, 0.0..=0.5).text("Serration"),
+            &mut writeback,
+            &mut regen,
+        );
+        slider_debounced(
+            ui,
+            egui::Slider::new(&mut cfg.vein_angle, 1.0..=5.0).text("Vein Angle"),
+            &mut writeback,
+            &mut regen,
+        );
+        slider_debounced(
+            ui,
+            egui::Slider::new(&mut cfg.vein_count, 2.0..=12.0).text("Vein Count"),
+            &mut writeback,
+            &mut regen,
+        );
+        slider_debounced(
+            ui,
+            egui::Slider::new(&mut cfg.lobe_count, 0.0..=6.0).text("Lobe Count"),
+            &mut writeback,
+            &mut regen,
+        );
+        slider_debounced(
+            ui,
+            egui::Slider::new(&mut cfg.lobe_depth, 0.0..=1.0).text("Lobe Depth"),
+            &mut writeback,
+            &mut regen,
+        );
+        slider_debounced(
+            ui,
+            egui::Slider::new(&mut cfg.micro_detail, 0.0..=1.0).text("Micro Detail"),
+            &mut writeback,
+            &mut regen,
+        );
+        slider_debounced(
+            ui,
+            egui::Slider::new(&mut cfg.normal_strength, 0.0..=8.0).text("Normal Strength"),
+            &mut writeback,
+            &mut regen,
+        );
+        slider_debounced(
+            ui,
+            egui::Slider::new(&mut cfg.petiole_length, 0.0..=0.3).text("Petiole"),
+            &mut writeback,
+            &mut regen,
+        );
     });
-    changed
+    (writeback, regen)
 }
 
 fn twig_config_editor(
     ui: &mut egui::Ui,
     cfg: &mut bevy_symbios_texture::twig::TwigConfig,
     mat_id: u8,
-) -> bool {
-    let mut changed = false;
+) -> (bool, bool) {
+    let mut writeback = false;
+    let mut regen = false;
     ui.collapsing(format!("Twig Config##tc_{mat_id}"), |ui| {
         ui.horizontal(|ui| {
             ui.label("Stem Color:");
-            changed |= ui.color_edit_button_rgb(&mut cfg.stem_color).changed();
+            let r = ui.color_edit_button_rgb(&mut cfg.stem_color);
+            writeback |= r.changed();
+            regen |= r.changed();
         });
-        changed |= ui
-            .add(
-                egui::Slider::new(&mut cfg.stem_half_width, 0.005..=0.05)
-                    .text("Stem Width"),
-            )
-            .changed();
+        slider_debounced(
+            ui,
+            egui::Slider::new(&mut cfg.stem_half_width, 0.005..=0.05).text("Stem Width"),
+            &mut writeback,
+            &mut regen,
+        );
+        // leaf_pairs is usize — need local copy for the slider then write back.
         let mut leaf_pairs = cfg.leaf_pairs;
-        changed |= ui
-            .add(egui::Slider::new(&mut leaf_pairs, 1..=8).text("Leaf Pairs"))
-            .changed();
+        let r = ui.add(egui::Slider::new(&mut leaf_pairs, 1..=8).text("Leaf Pairs"));
+        writeback |= r.changed();
+        regen |= r.drag_stopped() || (r.changed() && !r.dragged());
         cfg.leaf_pairs = leaf_pairs;
-        changed |= ui
-            .add(
-                egui::Slider::new(&mut cfg.leaf_angle, 0.0..=std::f64::consts::PI)
-                    .text("Leaf Angle"),
-            )
-            .changed();
-        changed |= ui
-            .add(
-                egui::Slider::new(&mut cfg.leaf_scale, 0.1..=0.6)
-                    .text("Leaf Scale"),
-            )
-            .changed();
-        changed |= ui
-            .add(
-                egui::Slider::new(&mut cfg.stem_curve, 0.0..=0.15)
-                    .text("Stem Curve"),
-            )
-            .changed();
+
+        slider_debounced(
+            ui,
+            egui::Slider::new(&mut cfg.leaf_angle, 0.0..=std::f64::consts::PI).text("Leaf Angle"),
+            &mut writeback,
+            &mut regen,
+        );
+        slider_debounced(
+            ui,
+            egui::Slider::new(&mut cfg.leaf_scale, 0.1..=0.6).text("Leaf Scale"),
+            &mut writeback,
+            &mut regen,
+        );
+        slider_debounced(
+            ui,
+            egui::Slider::new(&mut cfg.stem_curve, 0.0..=0.15).text("Stem Curve"),
+            &mut writeback,
+            &mut regen,
+        );
+        // Checkbox: instant regen.
         let mut sympodial = cfg.sympodial;
-        changed |= ui.checkbox(&mut sympodial, "Sympodial").changed();
+        let r = ui.checkbox(&mut sympodial, "Sympodial");
+        writeback |= r.changed();
+        regen |= r.changed();
         cfg.sympodial = sympodial;
 
-        // Inline leaf appearance sub-section
-        changed |= leaf_config_editor(ui, &mut cfg.leaf, mat_id + 128);
+        // Inline leaf appearance sub-section.
+        let (wb, rg) = leaf_config_editor(ui, &mut cfg.leaf, mat_id + 128);
+        writeback |= wb;
+        regen |= rg;
     });
-    changed
+    (writeback, regen)
 }
 
 fn bark_config_editor(
     ui: &mut egui::Ui,
     cfg: &mut bevy_symbios_texture::bark::BarkConfig,
     mat_id: u8,
-) -> bool {
-    let mut changed = false;
+) -> (bool, bool) {
+    let mut writeback = false;
+    let mut regen = false;
     ui.collapsing(format!("Bark Config##bc_{mat_id}"), |ui| {
         ui.horizontal(|ui| {
             ui.label("Light Color:");
-            changed |= ui.color_edit_button_rgb(&mut cfg.color_light).changed();
+            let r = ui.color_edit_button_rgb(&mut cfg.color_light);
+            writeback |= r.changed();
+            regen |= r.changed();
         });
         ui.horizontal(|ui| {
             ui.label("Dark Color:");
-            changed |= ui.color_edit_button_rgb(&mut cfg.color_dark).changed();
+            let r = ui.color_edit_button_rgb(&mut cfg.color_dark);
+            writeback |= r.changed();
+            regen |= r.changed();
         });
-        changed |= ui
-            .add(egui::Slider::new(&mut cfg.scale, 1.0..=12.0).text("Scale"))
-            .changed();
-        changed |= ui
-            .add(egui::Slider::new(&mut cfg.warp_u, 0.0..=0.5).text("Warp H"))
-            .changed();
-        changed |= ui
-            .add(egui::Slider::new(&mut cfg.warp_v, 0.0..=1.5).text("Warp V"))
-            .changed();
-        changed |= ui
-            .add(
-                egui::Slider::new(&mut cfg.normal_strength, 0.0..=8.0)
-                    .text("Normal Strength"),
-            )
-            .changed();
+        slider_debounced(
+            ui,
+            egui::Slider::new(&mut cfg.scale, 1.0..=12.0).text("Scale"),
+            &mut writeback,
+            &mut regen,
+        );
+        slider_debounced(
+            ui,
+            egui::Slider::new(&mut cfg.warp_u, 0.0..=0.5).text("Warp H"),
+            &mut writeback,
+            &mut regen,
+        );
+        slider_debounced(
+            ui,
+            egui::Slider::new(&mut cfg.warp_v, 0.0..=1.5).text("Warp V"),
+            &mut writeback,
+            &mut regen,
+        );
+        slider_debounced(
+            ui,
+            egui::Slider::new(&mut cfg.normal_strength, 0.0..=8.0).text("Normal Strength"),
+            &mut writeback,
+            &mut regen,
+        );
+        // octaves is usize — need local copy.
         let mut octaves = cfg.octaves;
-        changed |= ui
-            .add(egui::Slider::new(&mut octaves, 1..=8).text("Octaves"))
-            .changed();
+        let r = ui.add(egui::Slider::new(&mut octaves, 1..=8).text("Octaves"));
+        writeback |= r.changed();
+        regen |= r.drag_stopped() || (r.changed() && !r.dragged());
         cfg.octaves = octaves;
+
+        ui.separator();
+        ui.label("Rhytidome Plates:");
+        slider_debounced(
+            ui,
+            egui::Slider::new(&mut cfg.furrow_multiplier, 0.0..=1.0).text("Furrow Blend"),
+            &mut writeback,
+            &mut regen,
+        );
+        slider_debounced(
+            ui,
+            egui::Slider::new(&mut cfg.furrow_scale_u, 0.5..=6.0).text("Plate Width"),
+            &mut writeback,
+            &mut regen,
+        );
+        slider_debounced(
+            ui,
+            egui::Slider::new(&mut cfg.furrow_scale_v, 0.05..=1.0).text("Plate Length"),
+            &mut writeback,
+            &mut regen,
+        );
+        slider_debounced(
+            ui,
+            egui::Slider::new(&mut cfg.furrow_shape, 0.1..=2.0).text("Plate Shape"),
+            &mut writeback,
+            &mut regen,
+        );
     });
-    changed
+    (writeback, regen)
+}
+
+/// Adds a slider and accumulates writeback/regen flags with drag-aware debouncing.
+///
+/// - `writeback` is set on any `changed()` (even mid-drag) so the caller can write
+///   the value back to settings and prevent visual snap-back.
+/// - `regen` is set only when the drag commits (`drag_stopped`) or for non-drag
+///   changes (keyboard/click), avoiding unnecessary texture regeneration.
+fn slider_debounced(
+    ui: &mut egui::Ui,
+    slider: impl egui::Widget,
+    writeback: &mut bool,
+    regen: &mut bool,
+) {
+    let r = ui.add(slider);
+    *writeback |= r.changed();
+    *regen |= r.drag_stopped() || (r.changed() && !r.dragged());
 }
