@@ -10,7 +10,8 @@ Converts L-System skeletons into Bevy meshes and physics colliders for procedura
 - **Multi-Material Support**: Separate meshes per material ID for palette-driven PBR (bark, leaves, etc.)
 - **Vertex Colors**: Per-vertex RGBA colors from skeleton data
 - **UV Mapping**: Arc-length parameterized UVs with aspect-ratio preservation
-- **Physics Colliders** (optional): Capsule colliders for Avian3D physics
+- **Physics Colliders** (optional): Compound capsule colliders for Avian3D physics
+- **Robot Spawning** (optional): Spawn articulated rigid-body robots from `symbios-robot` blueprints
 
 ## Installation
 
@@ -18,14 +19,21 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-bevy_symbios = "0.2"
+bevy_symbios = "0.3"
 ```
 
 For physics support with [Avian3D](https://github.com/Jondolf/avian):
 
 ```toml
 [dependencies]
-bevy_symbios = { version = "0.2", features = ["physics"] }
+bevy_symbios = { version = "0.3", features = ["physics"] }
+```
+
+For robot spawning (enables `physics` automatically):
+
+```toml
+[dependencies]
+bevy_symbios = { version = "0.3", features = ["robot"] }
 ```
 
 ## Usage
@@ -94,26 +102,22 @@ unmodified. Any non-white base color will multiply with the vertex color.
 
 ### Physics Colliders
 
-Generate capsule colliders for physics simulation (requires `physics` feature):
+Generate a compound capsule collider for physics simulation (requires `physics` feature):
 
 ```rust
 use bevy::prelude::*;
 use bevy_symbios::{ColliderGenerator, symbios_turtle_3d::Skeleton};
 
-fn spawn_with_colliders(
+fn spawn_with_collider(
     mut commands: Commands,
     skeleton: Skeleton,
 ) {
-    // Generate colliders, filtering out thin branches
-    let colliders = ColliderGenerator::new()
+    // Generate a single compound collider, filtering out thin branches
+    if let Some(collider) = ColliderGenerator::new()
         .with_min_radius(0.05)  // Ignore twigs thinner than 5cm
-        .build(&skeleton);
-
-    for positioned in colliders {
-        commands.spawn((
-            positioned.transform,
-            positioned.collider,
-        ));
+        .build(&skeleton)
+    {
+        commands.spawn((Transform::default(), collider));
     }
 }
 ```
@@ -161,12 +165,12 @@ app.init_resource::<MaterialSettingsMap>()
     .add_systems(Update, sync_material_properties);
 ```
 
-`MaterialSettingsMap` holds editable settings for up to 3 materials (base color, emission, roughness, metallic, texture type, UV scale). `sync_material_properties` updates the Bevy `StandardMaterial` handles in `MaterialPalette` each frame without requiring geometry rebuilds.
+`MaterialSettingsMap` holds editable settings per material ID (base color, emission, roughness, metallic, texture type, UV scale). The default provides 3 entries but the map accepts any `u8` key. `sync_material_properties` updates the Bevy `StandardMaterial` handles in `MaterialPalette` each frame without requiring geometry rebuilds.
 
 ### Material Palette Editor (requires `egui` feature)
 
 ```toml
-bevy_symbios = { version = "0.2", features = ["egui"] }
+bevy_symbios = { version = "0.3", features = ["egui"] }
 ```
 
 ```rust
@@ -181,13 +185,16 @@ material_palette_editor(ui, &mut material_settings.settings);
 The `export` module converts meshes to OBJ and GLB (binary glTF) formats:
 
 ```rust
-use bevy_symbios::export::{mesh_to_obj, meshes_to_glb, ExportFormat};
+use bevy_symbios::export::{mesh_to_obj, meshes_to_obj, meshes_to_glb, ExportFormat};
 
-// OBJ string from a single mesh
-let obj_string = mesh_to_obj(&mesh, "tree", 0, 1);
+// OBJ string from a single mesh (vertex_offset=0 for standalone)
+let obj_string = mesh_to_obj(&mesh, "tree", 0);
+
+// Combined OBJ from all material buckets
+let obj_combined = meshes_to_obj(&mesh_map, "tree");
 
 // GLB binary with embedded PBR materials
-let glb_bytes = meshes_to_glb(&mesh_map, &material_settings, "tree");
+let glb_bytes = meshes_to_glb(&mesh_map, &material_settings_map.settings);
 ```
 
 ## API Reference
@@ -206,14 +213,15 @@ let glb_bytes = meshes_to_glb(&mesh_map, &material_settings, "tree");
 |--------|-------------|
 | `new()` | Create generator with no filtering |
 | `with_min_radius(r)` | Skip segments thinner than `r` |
-| `build(&skeleton)` | Generate `Vec<PositionedCollider>` |
+| `build(&skeleton)` | Generate `Option<Collider>` (single compound collider) |
+| `build_parts(&skeleton)` | Generate `Vec<PositionedCollider>` (individual segments) |
 
 ### `PositionedCollider`
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `transform` | `Transform` | World-space position and rotation |
-| `collider` | `Collider` | Avian3D capsule collider |
+| `collider` | `Collider` | Avian3D capsule (or sphere for short segments) |
 | `radius` | `f32` | Average segment radius |
 | `length` | `f32` | Segment length |
 
@@ -227,6 +235,7 @@ Generated meshes include:
 | `NORMAL` | Smooth normals |
 | `COLOR` | RGBA vertex colors for local tinting (`SkeletonPoint::color`) |
 | `UV_0` | Texture coordinates (U: around tube, V: along strand, scaled by `uv_scale`) |
+| `TANGENT` | Tangent vectors (auto-generated for normal mapping) |
 
 ## Ecosystem
 

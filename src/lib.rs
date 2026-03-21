@@ -20,6 +20,8 @@
 //! - `physics`: Enables [`ColliderGenerator`] and [`PositionedCollider`] for Avian3D
 //!   physics integration.
 //! - `egui`: Enables [`ui::material_palette_editor`] for `bevy_egui`-based material editing.
+//! - `robot`: Enables [`spawn_robot`] for spawning articulated rigid-body robots from
+//!   `symbios-robot` blueprints. Implies `physics`.
 //!
 //! # Example
 //!
