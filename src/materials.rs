@@ -20,17 +20,19 @@ use bevy::prelude::*;
 use bevy::render::render_resource::{Extent3d, Face, TextureDimension, TextureFormat};
 use bevy::tasks::{AsyncComputeTaskPool, Task, block_on, futures_lite::future};
 use bevy_symbios_texture::bark::{BarkConfig, BarkGenerator};
-use bevy_symbios_texture::generator::{TextureGenerator, TextureMap, TextureError};
+use bevy_symbios_texture::generator::{TextureError, TextureGenerator, TextureMap};
 use bevy_symbios_texture::leaf::{LeafConfig, LeafGenerator};
 use bevy_symbios_texture::twig::{TwigConfig, TwigGenerator};
-use bevy_symbios_texture::{map_to_images, map_to_images_card, GeneratedHandles};
+use bevy_symbios_texture::{GeneratedHandles, map_to_images, map_to_images_card};
 
 pub use bevy_symbios_texture::bark::BarkConfig as BarkTexConfig;
 pub use bevy_symbios_texture::leaf::LeafConfig as LeafTexConfig;
 pub use bevy_symbios_texture::twig::TwigConfig as TwigTexConfig;
 
 /// Available procedural texture types for materials.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, Default, serde::Serialize, serde::Deserialize,
+)]
 pub enum TextureType {
     #[default]
     None,
@@ -382,8 +384,7 @@ pub fn sync_material_properties(
                 foliage_tasks.pending_type.remove(mat_id);
             }
             TextureType::Grid | TextureType::Noise | TextureType::Checker => {
-                mat.base_color_texture =
-                    proc_textures.textures.get(&settings.texture).cloned();
+                mat.base_color_texture = proc_textures.textures.get(&settings.texture).cloned();
                 mat.normal_map_texture = None;
                 mat.metallic_roughness_texture = None;
                 mat.alpha_mode = AlphaMode::Opaque;
@@ -401,11 +402,12 @@ pub fn sync_material_properties(
                 // Only spawn if no same-type task is already in flight.
                 if foliage_tasks.pending_type.get(mat_id) != Some(&TextureType::Leaf) {
                     let config = settings.leaf_config.clone();
-                    let task = pool.spawn(async move {
-                        LeafGenerator::new(config).generate(512, 512)
-                    });
+                    let task =
+                        pool.spawn(async move { LeafGenerator::new(config).generate(512, 512) });
                     foliage_tasks.tasks.insert(*mat_id, (task, true));
-                    foliage_tasks.pending_type.insert(*mat_id, TextureType::Leaf);
+                    foliage_tasks
+                        .pending_type
+                        .insert(*mat_id, TextureType::Leaf);
                 }
             }
             TextureType::Twig => {
@@ -415,11 +417,12 @@ pub fn sync_material_properties(
 
                 if foliage_tasks.pending_type.get(mat_id) != Some(&TextureType::Twig) {
                     let config = settings.twig_config.clone();
-                    let task = pool.spawn(async move {
-                        TwigGenerator::new(config).generate(512, 512)
-                    });
+                    let task =
+                        pool.spawn(async move { TwigGenerator::new(config).generate(512, 512) });
                     foliage_tasks.tasks.insert(*mat_id, (task, true));
-                    foliage_tasks.pending_type.insert(*mat_id, TextureType::Twig);
+                    foliage_tasks
+                        .pending_type
+                        .insert(*mat_id, TextureType::Twig);
                 }
             }
             TextureType::Bark => {
@@ -429,11 +432,12 @@ pub fn sync_material_properties(
 
                 if foliage_tasks.pending_type.get(mat_id) != Some(&TextureType::Bark) {
                     let config = settings.bark_config.clone();
-                    let task = pool.spawn(async move {
-                        BarkGenerator::new(config).generate(512, 512)
-                    });
+                    let task =
+                        pool.spawn(async move { BarkGenerator::new(config).generate(512, 512) });
                     foliage_tasks.tasks.insert(*mat_id, (task, false));
-                    foliage_tasks.pending_type.insert(*mat_id, TextureType::Bark);
+                    foliage_tasks
+                        .pending_type
+                        .insert(*mat_id, TextureType::Bark);
                 }
             }
         }
