@@ -44,7 +44,7 @@ impl ExportFormat {
 ///
 /// Each material's mesh becomes a separate OBJ object named `{base_name}_mat{id}`.
 /// Returns the combined OBJ text (without header comments — prepend your own).
-pub fn meshes_to_obj(mesh_buckets: &HashMap<u8, Mesh>, base_name: &str) -> String {
+pub fn meshes_to_obj(mesh_buckets: &HashMap<u16, Mesh>, base_name: &str) -> String {
     let mut combined = String::new();
     let mut vertex_offset = 0u32;
 
@@ -142,15 +142,15 @@ pub fn mesh_to_obj(mesh: &Mesh, object_name: &str, vertex_offset: u32) -> String
 /// PBR metallic-roughness with base color, metallic, roughness, and emissive
 /// derived from [`MaterialSettings`].
 pub fn meshes_to_glb(
-    mesh_buckets: &HashMap<u8, Mesh>,
-    material_settings: &HashMap<u8, MaterialSettings>,
+    mesh_buckets: &HashMap<u16, Mesh>,
+    material_settings: &HashMap<u16, MaterialSettings>,
 ) -> Vec<u8> {
     build_glb(mesh_buckets, material_settings)
 }
 
 fn build_glb(
-    mesh_buckets: &HashMap<u8, Mesh>,
-    material_settings: &HashMap<u8, MaterialSettings>,
+    mesh_buckets: &HashMap<u16, Mesh>,
+    material_settings: &HashMap<u16, MaterialSettings>,
 ) -> Vec<u8> {
     let mut bin_buffer: Vec<u8> = Vec::new();
     let mut buffer_views = Vec::new();
@@ -159,7 +159,7 @@ fn build_glb(
     let mut gltf_nodes = Vec::new();
     let mut gltf_materials = Vec::new();
 
-    let mut mat_ids: Vec<u8> = mesh_buckets.keys().copied().collect();
+    let mut mat_ids: Vec<u16> = mesh_buckets.keys().copied().collect();
     mat_ids.sort();
 
     // Build GLTF materials

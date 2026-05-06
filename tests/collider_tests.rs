@@ -4,7 +4,7 @@ use symbios_turtle_3d::{Skeleton, SkeletonPoint};
 
 fn make_simple_skeleton() -> Skeleton {
     let mut s = Skeleton::new();
-    s.add_node(
+    s.start_strand(
         SkeletonPoint {
             position: Vec3::ZERO,
             rotation: Quat::IDENTITY,
@@ -13,19 +13,16 @@ fn make_simple_skeleton() -> Skeleton {
             material_id: 0,
             uv_scale: 1.0,
         },
-        true,
+        None,
     );
-    s.add_node(
-        SkeletonPoint {
-            position: Vec3::Y,
-            rotation: Quat::IDENTITY,
-            radius: 0.1,
-            color: Vec4::ONE,
-            material_id: 0,
-            uv_scale: 1.0,
-        },
-        false,
-    );
+    s.push_node(SkeletonPoint {
+        position: Vec3::Y,
+        rotation: Quat::IDENTITY,
+        radius: 0.1,
+        color: Vec4::ONE,
+        material_id: 0,
+        uv_scale: 1.0,
+    });
     s
 }
 
@@ -77,7 +74,7 @@ fn test_min_radius_filtering() {
     let mut s = Skeleton::new();
 
     // Thin segment (radius 0.01)
-    s.add_node(
+    s.start_strand(
         SkeletonPoint {
             position: Vec3::ZERO,
             rotation: Quat::IDENTITY,
@@ -86,22 +83,19 @@ fn test_min_radius_filtering() {
             material_id: 0,
             uv_scale: 1.0,
         },
-        true,
+        None,
     );
-    s.add_node(
-        SkeletonPoint {
-            position: Vec3::Y,
-            rotation: Quat::IDENTITY,
-            radius: 0.01,
-            color: Vec4::ONE,
-            material_id: 0,
-            uv_scale: 1.0,
-        },
-        false,
-    );
+    s.push_node(SkeletonPoint {
+        position: Vec3::Y,
+        rotation: Quat::IDENTITY,
+        radius: 0.01,
+        color: Vec4::ONE,
+        material_id: 0,
+        uv_scale: 1.0,
+    });
 
     // Thick segment (radius 0.1)
-    s.add_node(
+    s.start_strand(
         SkeletonPoint {
             position: Vec3::new(1.0, 0.0, 0.0),
             rotation: Quat::IDENTITY,
@@ -110,19 +104,16 @@ fn test_min_radius_filtering() {
             material_id: 0,
             uv_scale: 1.0,
         },
-        true,
+        None,
     );
-    s.add_node(
-        SkeletonPoint {
-            position: Vec3::new(1.0, 1.0, 0.0),
-            rotation: Quat::IDENTITY,
-            radius: 0.1,
-            color: Vec4::ONE,
-            material_id: 0,
-            uv_scale: 1.0,
-        },
-        false,
-    );
+    s.push_node(SkeletonPoint {
+        position: Vec3::new(1.0, 1.0, 0.0),
+        rotation: Quat::IDENTITY,
+        radius: 0.1,
+        color: Vec4::ONE,
+        material_id: 0,
+        uv_scale: 1.0,
+    });
 
     // Without filtering: both segments
     let generator = ColliderGenerator::new();
@@ -152,7 +143,7 @@ fn test_collider_orientation() {
     let mut s = Skeleton::new();
 
     // Horizontal segment along X axis
-    s.add_node(
+    s.start_strand(
         SkeletonPoint {
             position: Vec3::ZERO,
             rotation: Quat::IDENTITY,
@@ -161,19 +152,16 @@ fn test_collider_orientation() {
             material_id: 0,
             uv_scale: 1.0,
         },
-        true,
+        None,
     );
-    s.add_node(
-        SkeletonPoint {
-            position: Vec3::X,
-            rotation: Quat::IDENTITY,
-            radius: 0.1,
-            color: Vec4::ONE,
-            material_id: 0,
-            uv_scale: 1.0,
-        },
-        false,
-    );
+    s.push_node(SkeletonPoint {
+        position: Vec3::X,
+        rotation: Quat::IDENTITY,
+        radius: 0.1,
+        color: Vec4::ONE,
+        material_id: 0,
+        uv_scale: 1.0,
+    });
 
     let generator = ColliderGenerator::new();
     let parts = generator.build_parts(&s);
@@ -194,7 +182,7 @@ fn test_multi_segment_strand() {
     let mut s = Skeleton::new();
 
     // 3 points = 2 segments
-    s.add_node(
+    s.start_strand(
         SkeletonPoint {
             position: Vec3::ZERO,
             rotation: Quat::IDENTITY,
@@ -203,30 +191,24 @@ fn test_multi_segment_strand() {
             material_id: 0,
             uv_scale: 1.0,
         },
-        true,
+        None,
     );
-    s.add_node(
-        SkeletonPoint {
-            position: Vec3::Y,
-            rotation: Quat::IDENTITY,
-            radius: 0.1,
-            color: Vec4::ONE,
-            material_id: 0,
-            uv_scale: 1.0,
-        },
-        false,
-    );
-    s.add_node(
-        SkeletonPoint {
-            position: Vec3::Y * 2.0,
-            rotation: Quat::IDENTITY,
-            radius: 0.1,
-            color: Vec4::ONE,
-            material_id: 0,
-            uv_scale: 1.0,
-        },
-        false,
-    );
+    s.push_node(SkeletonPoint {
+        position: Vec3::Y,
+        rotation: Quat::IDENTITY,
+        radius: 0.1,
+        color: Vec4::ONE,
+        material_id: 0,
+        uv_scale: 1.0,
+    });
+    s.push_node(SkeletonPoint {
+        position: Vec3::Y * 2.0,
+        rotation: Quat::IDENTITY,
+        radius: 0.1,
+        color: Vec4::ONE,
+        material_id: 0,
+        uv_scale: 1.0,
+    });
 
     let generator = ColliderGenerator::new();
     let parts = generator.build_parts(&s);
@@ -255,7 +237,7 @@ fn test_short_segment_uses_sphere() {
     let mut s = Skeleton::new();
 
     // Segment with length 0.1, radius 0.2 → length < 2*radius
-    s.add_node(
+    s.start_strand(
         SkeletonPoint {
             position: Vec3::ZERO,
             rotation: Quat::IDENTITY,
@@ -264,19 +246,16 @@ fn test_short_segment_uses_sphere() {
             material_id: 0,
             uv_scale: 1.0,
         },
-        true,
+        None,
     );
-    s.add_node(
-        SkeletonPoint {
-            position: Vec3::new(0.0, 0.1, 0.0),
-            rotation: Quat::IDENTITY,
-            radius: 0.2,
-            color: Vec4::ONE,
-            material_id: 0,
-            uv_scale: 1.0,
-        },
-        false,
-    );
+    s.push_node(SkeletonPoint {
+        position: Vec3::new(0.0, 0.1, 0.0),
+        rotation: Quat::IDENTITY,
+        radius: 0.2,
+        color: Vec4::ONE,
+        material_id: 0,
+        uv_scale: 1.0,
+    });
 
     let generator = ColliderGenerator::new();
     let parts = generator.build_parts(&s);

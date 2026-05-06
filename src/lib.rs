@@ -32,8 +32,13 @@
 //! fn setup(app: &mut App) {
 //!     app.init_resource::<MaterialSettingsMap>()
 //!        .add_systems(Startup, setup_material_assets)
-//!        .add_systems(Update, sync_material_properties);
+//!        .add_observer(on_material_settings_changed)
+//!        .add_systems(Update, apply_foliage_textures);
 //! }
+//!
+//! // After mutating MaterialSettingsMap, fire:
+//! //   commands.trigger(MaterialSettingsChanged);
+//! // The observer runs in-frame and applies the new values.
 //!
 //! fn spawn_lsystem(
 //!     mut commands: Commands,
@@ -69,7 +74,10 @@ pub mod collider;
 #[cfg(feature = "egui")]
 pub mod ui;
 
-pub use mesher::LSystemMeshBuilder;
+#[cfg(feature = "asset-loader")]
+pub mod loader;
+
+pub use mesher::{LSystemMeshBuilder, MeshCache};
 
 #[cfg(feature = "physics")]
 pub use collider::{ColliderGenerator, PositionedCollider};

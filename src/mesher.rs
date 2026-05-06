@@ -8,6 +8,7 @@ use bevy::asset::RenderAssetUsages;
 use bevy::mesh::{Indices, PrimitiveTopology};
 use bevy::platform::collections::HashMap;
 use bevy::prelude::*;
+use std::hash::{DefaultHasher, Hash, Hasher};
 use symbios_turtle_3d::{Skeleton, SkeletonPoint};
 
 // Helper struct to build a single mesh
@@ -71,7 +72,7 @@ const MAX_RESOLUTION: u32 = 128;
 /// }
 /// ```
 pub struct LSystemMeshBuilder {
-    buckets: HashMap<u8, MeshData>,
+    buckets: HashMap<u16, MeshData>,
     resolution: u32,
 }
 
@@ -112,7 +113,7 @@ impl LSystemMeshBuilder {
     /// that share the same `material_id` from their starting [`SkeletonPoint`].
     ///
     /// Empty skeletons or strands with fewer than 2 points produce no output.
-    pub fn build(mut self, skeleton: &Skeleton) -> HashMap<u8, Mesh> {
+    pub fn build(mut self, skeleton: &Skeleton) -> HashMap<u16, Mesh> {
         for strand in &skeleton.strands {
             if strand.len() < 2 {
                 continue;
@@ -210,12 +211,12 @@ impl LSystemMeshBuilder {
         // Phase 3: Generate rings and connect, with vertex sharing.
         // When consecutive segments share the same material ID, the top ring of
         // segment N is reused as the bottom ring of segment N+1.
-        let mut ring_cache: Vec<Option<(u8, u32)>> = vec![None; n];
+        let mut ring_cache: Vec<Option<(u16, u32)>> = vec![None; n];
 
         for i in 0..n - 1 {
             let curr = points[i];
             let next = points[i + 1];
-            let mat_id = curr.material_id;
+            let mat_id = curr.material_id as u16;
             let bucket = self.buckets.entry(mat_id).or_default();
 
             // Bottom ring: reuse cached ring if same material bucket already has one
@@ -310,4 +311,119 @@ impl LSystemMeshBuilder {
             data.indices.push(top_next);
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Mesh cache
+// ---------------------------------------------------------------------------
+
+/// Resource that maps a skeleton fingerprint to its built per-material [`Mesh`]
+/// handles, enabling re-spawn of identical L-systems without re-meshing.
+///
+/// # Invalidation
+///
+/// Auto-invalidation: each call to [`LSystemMeshBuilder::build_cached`]
+/// recomputes a fingerprint over the skeleton's strands (positions, rotations,
+/// radii, colors, material IDs, UV scales) plus the builder's resolution. If
+/// any of those change, the fingerprint changes and a fresh mesh is built. The
+/// previous entry remains in the cache until [`MeshCache::clear`] is called —
+/// the cache does not LRU-evict on its own.
+///
+/// # Trade-off
+///
+/// Caching trades memory for CPU. Each cached entry keeps its [`Mesh`] assets
+/// alive (the [`Handle`]s live in the cache). For long-running scenes that
+/// generate many unique skeletons, call [`MeshCache::clear`] periodically to
+/// release them, or manage a coarser eviction policy at the application layer.
+#[derive(Resource, Default)]
+pub struct MeshCache {
+    entries: HashMap<u64, HashMap<u16, Handle<Mesh>>>,
+}
+
+impl MeshCache {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    /// Drop all cached entries, releasing the underlying [`Handle<Mesh>`]
+    /// references. The mesh assets are freed once no other strong handles
+    /// remain.
+    pub fn clear(&mut self) {
+        self.entries.clear();
+    }
+
+    /// Returns `true` if a fingerprint matching the given skeleton+resolution
+    /// is already cached. Useful for tests and instrumentation.
+    pub fn contains(&self, skeleton: &Skeleton, resolution: u32) -> bool {
+        self.entries
+            .contains_key(&compute_fingerprint(skeleton, resolution))
+    }
+}
+
+impl LSystemMeshBuilder {
+    /// Like [`LSystemMeshBuilder::build`], but consults `cache` first. On a
+    /// cache hit, returns the cached [`Handle<Mesh>`]s without re-meshing.
+    /// On a miss, builds the meshes, inserts them into `meshes`, stores the
+    /// resulting handles in the cache under the skeleton's fingerprint, and
+    /// returns them.
+    ///
+    /// Callers that re-spawn the same L-system many times (props, tile-based
+    /// foliage, deterministic regrowth) should prefer this over `build`.
+    pub fn build_cached(
+        self,
+        skeleton: &Skeleton,
+        cache: &mut MeshCache,
+        meshes: &mut Assets<Mesh>,
+    ) -> HashMap<u16, Handle<Mesh>> {
+        let fingerprint = compute_fingerprint(skeleton, self.resolution);
+        if let Some(handles) = cache.entries.get(&fingerprint) {
+            return handles.clone();
+        }
+        let mesh_buckets = self.build(skeleton);
+        let handles: HashMap<u16, Handle<Mesh>> = mesh_buckets
+            .into_iter()
+            .map(|(id, mesh)| (id, meshes.add(mesh)))
+            .collect();
+        cache.entries.insert(fingerprint, handles.clone());
+        handles
+    }
+}
+
+fn compute_fingerprint(skeleton: &Skeleton, resolution: u32) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    resolution.hash(&mut hasher);
+    skeleton.strands.len().hash(&mut hasher);
+    for strand in &skeleton.strands {
+        strand.len().hash(&mut hasher);
+        for point in strand {
+            hash_skeleton_point(point, &mut hasher);
+        }
+    }
+    skeleton.strand_parents.hash(&mut hasher);
+    hasher.finish()
+}
+
+fn hash_skeleton_point<H: Hasher>(p: &SkeletonPoint, hasher: &mut H) {
+    p.position.x.to_bits().hash(hasher);
+    p.position.y.to_bits().hash(hasher);
+    p.position.z.to_bits().hash(hasher);
+    p.rotation.x.to_bits().hash(hasher);
+    p.rotation.y.to_bits().hash(hasher);
+    p.rotation.z.to_bits().hash(hasher);
+    p.rotation.w.to_bits().hash(hasher);
+    p.radius.to_bits().hash(hasher);
+    p.color.x.to_bits().hash(hasher);
+    p.color.y.to_bits().hash(hasher);
+    p.color.z.to_bits().hash(hasher);
+    p.color.w.to_bits().hash(hasher);
+    p.material_id.hash(hasher);
+    p.uv_scale.to_bits().hash(hasher);
 }

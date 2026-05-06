@@ -1,7 +1,21 @@
 use crate::materials::MaterialPalette;
 use avian3d::prelude::*;
 use bevy::prelude::*;
-use symbios_robot::{JointType, RobotBlueprint, SensorType, ShapePrimitive};
+use symbios_robot::{AxisLimit, JointType, RobotBlueprint, SensorType, ShapePrimitive};
+
+/// Pick the [`AxisLimit`] whose axis aligns with the joint's drive axis.
+///
+/// `limits` is per-axis: a single-axis joint (Hinge/Prismatic) takes the entry
+/// whose axis is parallel (within tolerance) to the drive axis. Falls back to
+/// the first entry if no axis is parallel — matches the v0.2 behavior where
+/// `Option<Limit>` was implicitly the joint's single axis.
+fn limit_for_axis(limits: &[AxisLimit], drive_axis: Vec3) -> Option<&AxisLimit> {
+    let drive = drive_axis.normalize_or_zero();
+    limits
+        .iter()
+        .find(|l| l.axis.normalize_or_zero().dot(drive).abs() > 0.999)
+        .or_else(|| limits.first())
+}
 
 /// Marker: this module entity has an IMU sensor.
 /// The IMU reads pitch and roll from the entity's `Transform`.
@@ -129,14 +143,14 @@ pub fn spawn_robot(
                         .with_local_basis2(child_rest_basis),
                 )
                 .id(),
-            JointType::Hinge => {
+            JointType::Hinge { axis } => {
                 let mut joint = RevoluteJoint::new(parent_entity, child_entity)
                     .with_local_anchor1(joint_def.anchor_parent)
                     .with_local_anchor2(joint_def.anchor_child)
                     .with_local_basis2(child_rest_basis)
-                    .with_hinge_axis(joint_def.axis);
+                    .with_hinge_axis(axis);
 
-                if let Some(limit) = &joint_def.limits {
+                if let Some(limit) = limit_for_axis(&joint_def.limits, axis) {
                     joint = joint.with_angle_limits(limit.min, limit.max);
 
                     let motor = AngularMotor::default()
@@ -156,14 +170,14 @@ pub fn spawn_robot(
                         .with_local_basis2(child_rest_basis),
                 )
                 .id(),
-            JointType::Prismatic => {
+            JointType::Prismatic { axis } => {
                 let mut joint = PrismaticJoint::new(parent_entity, child_entity)
                     .with_local_anchor1(joint_def.anchor_parent)
                     .with_local_anchor2(joint_def.anchor_child)
                     .with_local_basis2(child_rest_basis)
-                    .with_slider_axis(joint_def.axis);
+                    .with_slider_axis(axis);
 
-                if let Some(limit) = &joint_def.limits {
+                if let Some(limit) = limit_for_axis(&joint_def.limits, axis) {
                     joint = joint.with_limits(limit.min, limit.max);
 
                     let motor = LinearMotor::default()
@@ -174,6 +188,24 @@ pub fn spawn_robot(
                 }
 
                 commands.spawn(joint).id()
+            }
+            JointType::Screw { .. } => {
+                // avian3d has no helical (screw) constraint. Approximate as Fixed
+                // so the chain still spawns; downstream consumers can replace with
+                // a custom constraint or break the rotation/translation coupling
+                // into separate joints.
+                warn!(
+                    "Screw joints are not supported by avian3d; spawning Fixed joint between {:?} and {:?}",
+                    joint_def.parent_id, joint_def.child_id
+                );
+                commands
+                    .spawn(
+                        FixedJoint::new(parent_entity, child_entity)
+                            .with_local_anchor1(joint_def.anchor_parent)
+                            .with_local_anchor2(joint_def.anchor_child)
+                            .with_local_basis2(child_rest_basis),
+                    )
+                    .id()
             }
         };
         joint_entities.push((joint_entity, joint_def.joint_type));

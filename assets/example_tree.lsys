@@ -1,0 +1,5 @@
+// Sample L-system: simple branching axiom.
+// Edit this file at runtime — with bevy/file_watcher enabled the running
+// example will reload automatically.
+omega: A(0)
+A(x) : x < 5 -> A(x + 1) B

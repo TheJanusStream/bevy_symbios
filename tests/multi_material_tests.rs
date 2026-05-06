@@ -11,7 +11,7 @@ fn test_multi_material_bucket_generation() {
     // The segment logic uses start_node.material_id.
     // So Segment 0 is Mat 0.
 
-    s.add_node(
+    s.start_strand(
         SkeletonPoint {
             position: Vec3::ZERO,
             rotation: Quat::IDENTITY,
@@ -20,35 +20,29 @@ fn test_multi_material_bucket_generation() {
             material_id: 0,
             uv_scale: 1.0,
         },
-        true,
+        None,
     );
 
     // P1 -> P2 (Segment 1, Material 1)
     // Start P1 has mat_id=1. So Segment 1 is Mat 1.
 
-    s.add_node(
-        SkeletonPoint {
-            position: Vec3::Y,
-            rotation: Quat::IDENTITY,
-            radius: 0.1,
-            color: Vec4::new(1.0, 0.0, 0.0, 1.0),
-            material_id: 1, // Determines material for NEXT segment
-            uv_scale: 1.0,
-        },
-        false,
-    );
+    s.push_node(SkeletonPoint {
+        position: Vec3::Y,
+        rotation: Quat::IDENTITY,
+        radius: 0.1,
+        color: Vec4::new(1.0, 0.0, 0.0, 1.0),
+        material_id: 1, // Determines material for NEXT segment
+        uv_scale: 1.0,
+    });
 
-    s.add_node(
-        SkeletonPoint {
-            position: Vec3::Y * 2.0,
-            rotation: Quat::IDENTITY,
-            radius: 0.1,
-            color: Vec4::new(0.0, 1.0, 0.0, 1.0), // Green
-            material_id: 1,
-            uv_scale: 1.0,
-        },
-        false,
-    );
+    s.push_node(SkeletonPoint {
+        position: Vec3::Y * 2.0,
+        rotation: Quat::IDENTITY,
+        radius: 0.1,
+        color: Vec4::new(0.0, 1.0, 0.0, 1.0), // Green
+        material_id: 1,
+        uv_scale: 1.0,
+    });
 
     let builder = LSystemMeshBuilder::default();
     let meshes = builder.build(&s);

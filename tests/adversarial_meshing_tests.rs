@@ -7,7 +7,7 @@ fn test_180_degree_singularity() {
     let mut s = Skeleton::new();
 
     // Point 0: Origin
-    s.add_node(
+    s.start_strand(
         SkeletonPoint {
             position: Vec3::ZERO,
             rotation: Quat::IDENTITY,
@@ -16,34 +16,28 @@ fn test_180_degree_singularity() {
             material_id: 0,
             uv_scale: 1.0,
         },
-        true,
+        None,
     );
 
     // Point 1: Up
-    s.add_node(
-        SkeletonPoint {
-            position: Vec3::new(0.0, 1.0, 0.0),
-            rotation: Quat::IDENTITY,
-            radius: 0.1,
-            color: Vec4::ONE,
-            material_id: 0,
-            uv_scale: 1.0,
-        },
-        false,
-    );
+    s.push_node(SkeletonPoint {
+        position: Vec3::new(0.0, 1.0, 0.0),
+        rotation: Quat::IDENTITY,
+        radius: 0.1,
+        color: Vec4::ONE,
+        material_id: 0,
+        uv_scale: 1.0,
+    });
 
     // Point 2: Back to Origin (180 deg turn)
-    s.add_node(
-        SkeletonPoint {
-            position: Vec3::ZERO,
-            rotation: Quat::IDENTITY,
-            radius: 0.1,
-            color: Vec4::ONE,
-            material_id: 0,
-            uv_scale: 1.0,
-        },
-        false,
-    );
+    s.push_node(SkeletonPoint {
+        position: Vec3::ZERO,
+        rotation: Quat::IDENTITY,
+        radius: 0.1,
+        color: Vec4::ONE,
+        material_id: 0,
+        uv_scale: 1.0,
+    });
 
     let builder = LSystemMeshBuilder::default();
     let meshes = builder.build(&s);
@@ -69,7 +63,7 @@ fn test_180_degree_singularity() {
 fn test_zero_length_segment_collapse() {
     // Two points at exact same location (should be filtered or handled)
     let mut s = Skeleton::new();
-    s.add_node(
+    s.start_strand(
         SkeletonPoint {
             position: Vec3::ZERO,
             rotation: Quat::IDENTITY,
@@ -78,19 +72,16 @@ fn test_zero_length_segment_collapse() {
             material_id: 0,
             uv_scale: 1.0,
         },
-        true,
+        None,
     );
-    s.add_node(
-        SkeletonPoint {
-            position: Vec3::ZERO,
-            rotation: Quat::IDENTITY,
-            radius: 0.1,
-            color: Vec4::ONE,
-            material_id: 0,
-            uv_scale: 1.0,
-        },
-        false,
-    );
+    s.push_node(SkeletonPoint {
+        position: Vec3::ZERO,
+        rotation: Quat::IDENTITY,
+        radius: 0.1,
+        color: Vec4::ONE,
+        material_id: 0,
+        uv_scale: 1.0,
+    });
 
     let builder = LSystemMeshBuilder::default();
     let meshes = builder.build(&s);

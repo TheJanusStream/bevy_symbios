@@ -2,7 +2,7 @@
 //!
 //! Provides configurable PBR materials with procedural texture support,
 //! designed for the palette-first material workflow where each material slot
-//! (identified by `u8` ID) maps to a Bevy [`StandardMaterial`].
+//! (identified by `u16` ID) maps to a Bevy [`StandardMaterial`].
 //!
 //! # Workflow
 //!
@@ -77,7 +77,8 @@ impl TextureType {
 }
 
 /// Per-material PBR settings for UI editing and export.
-#[derive(Clone)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
 pub struct MaterialSettings {
     pub base_color: [f32; 3],
     pub emission_color: [f32; 3],
@@ -114,7 +115,7 @@ impl Default for MaterialSettings {
 /// Resource holding editable settings for each material ID.
 #[derive(Resource)]
 pub struct MaterialSettingsMap {
-    pub settings: HashMap<u8, MaterialSettings>,
+    pub settings: HashMap<u16, MaterialSettings>,
 }
 
 impl Default for MaterialSettingsMap {
@@ -170,7 +171,7 @@ impl Default for MaterialSettingsMap {
 /// Stores material handles mapped by material ID.
 #[derive(Resource)]
 pub struct MaterialPalette {
-    pub materials: HashMap<u8, Handle<StandardMaterial>>,
+    pub materials: HashMap<u16, Handle<StandardMaterial>>,
     /// Default material handle used as fallback.
     pub primary_material: Handle<StandardMaterial>,
 }
@@ -192,9 +193,9 @@ pub struct ProceduralTextures {
 /// change triggers a fresh generation.
 #[derive(Resource, Default)]
 pub struct FoliageTextureTasks {
-    tasks: HashMap<u8, (Task<Result<TextureMap, TextureError>>, bool)>,
+    tasks: HashMap<u16, (Task<Result<TextureMap, TextureError>>, bool)>,
     /// Texture type of the currently pending task per material ID.
-    pending_type: HashMap<u8, TextureType>,
+    pending_type: HashMap<u16, TextureType>,
 }
 
 // ---------------------------------------------------------------------------
@@ -332,24 +333,33 @@ pub fn setup_material_assets(
     });
 }
 
-/// Update system that synchronizes [`MaterialSettingsMap`] values to the
-/// [`MaterialPalette`]'s `StandardMaterial` handles.
+/// Event fired by callers after they mutate [`MaterialSettingsMap`].
+///
+/// Triggers [`on_material_settings_changed`], which writes the latest settings
+/// onto the [`MaterialPalette`]'s `StandardMaterial` handles. Use
+/// `commands.trigger(MaterialSettingsChanged)` after editing settings — there
+/// is no implicit `is_changed()` polling.
+#[derive(Event, Default)]
+pub struct MaterialSettingsChanged;
+
+/// Observer that synchronizes [`MaterialSettingsMap`] values to the
+/// [`MaterialPalette`]'s `StandardMaterial` handles whenever
+/// [`MaterialSettingsChanged`] is triggered.
 ///
 /// For simple procedural textures (Grid, Noise, Checker) the handle is applied
 /// immediately.  For foliage textures (Leaf, Twig, Bark) an async generation
 /// task is spawned into [`FoliageTextureTasks`]; call [`apply_foliage_textures`]
 /// each frame to collect results and update the material.
-pub fn sync_material_properties(
+///
+/// Register with `app.add_observer(on_material_settings_changed)`.
+pub fn on_material_settings_changed(
+    _: On<MaterialSettingsChanged>,
     material_settings: Res<MaterialSettingsMap>,
     mut palette: ResMut<MaterialPalette>,
     proc_textures: Res<ProceduralTextures>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut foliage_tasks: ResMut<FoliageTextureTasks>,
 ) {
-    if !material_settings.is_changed() {
-        return;
-    }
-
     let pool = AsyncComputeTaskPool::get();
 
     for (mat_id, settings) in &material_settings.settings {
@@ -447,7 +457,8 @@ pub fn sync_material_properties(
 /// Update system that polls completed foliage texture tasks and applies the
 /// generated handles to the corresponding [`StandardMaterial`].
 ///
-/// Must run after [`sync_material_properties`] in the same schedule.
+/// Independent of [`on_material_settings_changed`] — runs every frame to
+/// drain task results regardless of whether settings changed.
 ///
 /// Marks [`MaterialPalette`] as changed whenever any texture is applied so that
 /// downstream systems (e.g. prop-material caches) know to refresh their copies.

@@ -6,17 +6,19 @@ use symbios_turtle_3d::{Skeleton, SkeletonPoint};
 fn build_skeleton_from_points(points: Vec<Vec3>) -> Skeleton {
     let mut s = Skeleton::new();
     for (i, p) in points.iter().enumerate() {
-        s.add_node(
-            SkeletonPoint {
-                position: *p,
-                rotation: Quat::IDENTITY,
-                radius: 0.1,
-                color: Vec4::ONE,
-                material_id: 0,
-                uv_scale: 1.0,
-            },
-            i == 0, // New strand on first point
-        );
+        let point = SkeletonPoint {
+            position: *p,
+            rotation: Quat::IDENTITY,
+            radius: 0.1,
+            color: Vec4::ONE,
+            material_id: 0,
+            uv_scale: 1.0,
+        };
+        if i == 0 {
+            s.start_strand(point, None);
+        } else {
+            s.push_node(point);
+        }
     }
     s
 }

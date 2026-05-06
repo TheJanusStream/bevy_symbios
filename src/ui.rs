@@ -31,11 +31,11 @@ pub use bevy_symbios_texture::ui::{
 /// drag; the return value indicates whether texture regeneration is needed.
 pub fn material_palette_editor(
     ui: &mut egui::Ui,
-    settings: &mut HashMap<u8, MaterialSettings>,
+    settings: &mut HashMap<u16, MaterialSettings>,
 ) -> bool {
     let mut any_regen = false;
 
-    let mut mat_ids: Vec<u8> = settings.keys().copied().collect();
+    let mut mat_ids: Vec<u16> = settings.keys().copied().collect();
     mat_ids.sort();
 
     for mat_id in mat_ids {

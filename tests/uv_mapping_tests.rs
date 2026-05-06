@@ -13,7 +13,7 @@ fn get_uvs(mesh: &Mesh) -> &[[f32; 2]] {
 #[test]
 fn test_uv_coordinates_present() {
     let mut s = Skeleton::new();
-    s.add_node(
+    s.start_strand(
         SkeletonPoint {
             position: Vec3::ZERO,
             rotation: Quat::IDENTITY,
@@ -22,19 +22,16 @@ fn test_uv_coordinates_present() {
             material_id: 0,
             uv_scale: 1.0,
         },
-        true,
+        None,
     );
-    s.add_node(
-        SkeletonPoint {
-            position: Vec3::Y,
-            rotation: Quat::IDENTITY,
-            radius: 0.1,
-            color: Vec4::ONE,
-            material_id: 0,
-            uv_scale: 1.0,
-        },
-        false,
-    );
+    s.push_node(SkeletonPoint {
+        position: Vec3::Y,
+        rotation: Quat::IDENTITY,
+        radius: 0.1,
+        color: Vec4::ONE,
+        material_id: 0,
+        uv_scale: 1.0,
+    });
 
     let builder = LSystemMeshBuilder::default();
     let meshes = builder.build(&s);
@@ -51,7 +48,7 @@ fn test_uv_coordinates_present() {
 #[test]
 fn test_uv_u_wraps_around() {
     let mut s = Skeleton::new();
-    s.add_node(
+    s.start_strand(
         SkeletonPoint {
             position: Vec3::ZERO,
             rotation: Quat::IDENTITY,
@@ -60,19 +57,16 @@ fn test_uv_u_wraps_around() {
             material_id: 0,
             uv_scale: 1.0,
         },
-        true,
+        None,
     );
-    s.add_node(
-        SkeletonPoint {
-            position: Vec3::Y,
-            rotation: Quat::IDENTITY,
-            radius: 0.1,
-            color: Vec4::ONE,
-            material_id: 0,
-            uv_scale: 1.0,
-        },
-        false,
-    );
+    s.push_node(SkeletonPoint {
+        position: Vec3::Y,
+        rotation: Quat::IDENTITY,
+        radius: 0.1,
+        color: Vec4::ONE,
+        material_id: 0,
+        uv_scale: 1.0,
+    });
 
     let builder = LSystemMeshBuilder::new().with_resolution(8);
     let meshes = builder.build(&s);
@@ -100,7 +94,7 @@ fn test_uv_u_wraps_around() {
 #[test]
 fn test_uv_v_increases_with_length() {
     let mut s = Skeleton::new();
-    s.add_node(
+    s.start_strand(
         SkeletonPoint {
             position: Vec3::ZERO,
             rotation: Quat::IDENTITY,
@@ -109,19 +103,16 @@ fn test_uv_v_increases_with_length() {
             material_id: 0,
             uv_scale: 1.0,
         },
-        true,
+        None,
     );
-    s.add_node(
-        SkeletonPoint {
-            position: Vec3::Y * 2.0, // 2 units long
-            rotation: Quat::IDENTITY,
-            radius: 0.1,
-            color: Vec4::ONE,
-            material_id: 0,
-            uv_scale: 1.0,
-        },
-        false,
-    );
+    s.push_node(SkeletonPoint {
+        position: Vec3::Y * 2.0, // 2 units long
+        rotation: Quat::IDENTITY,
+        radius: 0.1,
+        color: Vec4::ONE,
+        material_id: 0,
+        uv_scale: 1.0,
+    });
 
     let builder = LSystemMeshBuilder::default();
     let meshes = builder.build(&s);
@@ -151,7 +142,7 @@ fn test_uv_v_increases_with_length() {
 fn test_uv_no_nans() {
     // Test with edge cases that might produce NaNs
     let mut s = Skeleton::new();
-    s.add_node(
+    s.start_strand(
         SkeletonPoint {
             position: Vec3::ZERO,
             rotation: Quat::IDENTITY,
@@ -160,19 +151,16 @@ fn test_uv_no_nans() {
             material_id: 0,
             uv_scale: 1.0,
         },
-        true,
+        None,
     );
-    s.add_node(
-        SkeletonPoint {
-            position: Vec3::Y,
-            rotation: Quat::IDENTITY,
-            radius: 0.001,
-            color: Vec4::ONE,
-            material_id: 0,
-            uv_scale: 1.0,
-        },
-        false,
-    );
+    s.push_node(SkeletonPoint {
+        position: Vec3::Y,
+        rotation: Quat::IDENTITY,
+        radius: 0.001,
+        color: Vec4::ONE,
+        material_id: 0,
+        uv_scale: 1.0,
+    });
 
     let builder = LSystemMeshBuilder::default();
     let meshes = builder.build(&s);
@@ -196,7 +184,7 @@ fn test_uv_scale_multiplies_v_coordinate() {
 
     // Build a baseline mesh with uv_scale=1.0
     let mut s1 = Skeleton::new();
-    s1.add_node(
+    s1.start_strand(
         SkeletonPoint {
             position: Vec3::ZERO,
             rotation: Quat::IDENTITY,
@@ -205,19 +193,16 @@ fn test_uv_scale_multiplies_v_coordinate() {
             material_id: 0,
             uv_scale: 1.0,
         },
-        true,
+        None,
     );
-    s1.add_node(
-        SkeletonPoint {
-            position: Vec3::Y,
-            rotation: Quat::IDENTITY,
-            radius: 0.1,
-            color: Vec4::ONE,
-            material_id: 0,
-            uv_scale: 1.0,
-        },
-        false,
-    );
+    s1.push_node(SkeletonPoint {
+        position: Vec3::Y,
+        rotation: Quat::IDENTITY,
+        radius: 0.1,
+        color: Vec4::ONE,
+        material_id: 0,
+        uv_scale: 1.0,
+    });
     let baseline_v = {
         let meshes = LSystemMeshBuilder::default().build(&s1);
         let uvs = get_uvs(meshes.get(&0).unwrap());
@@ -226,7 +211,7 @@ fn test_uv_scale_multiplies_v_coordinate() {
 
     // Build a scaled mesh with uv_scale=3.0
     let mut s2 = Skeleton::new();
-    s2.add_node(
+    s2.start_strand(
         SkeletonPoint {
             position: Vec3::ZERO,
             rotation: Quat::IDENTITY,
@@ -235,19 +220,16 @@ fn test_uv_scale_multiplies_v_coordinate() {
             material_id: 0,
             uv_scale: scale,
         },
-        true,
+        None,
     );
-    s2.add_node(
-        SkeletonPoint {
-            position: Vec3::Y,
-            rotation: Quat::IDENTITY,
-            radius: 0.1,
-            color: Vec4::ONE,
-            material_id: 0,
-            uv_scale: scale,
-        },
-        false,
-    );
+    s2.push_node(SkeletonPoint {
+        position: Vec3::Y,
+        rotation: Quat::IDENTITY,
+        radius: 0.1,
+        color: Vec4::ONE,
+        material_id: 0,
+        uv_scale: scale,
+    });
     let scaled_v = {
         let meshes = LSystemMeshBuilder::default().build(&s2);
         let uvs = get_uvs(meshes.get(&0).unwrap());
@@ -268,7 +250,7 @@ fn test_uv_v_continuous_across_tapered_segments() {
     // Two segments with different radii: the V coordinate at their shared boundary
     // must be identical (no discontinuity from per-segment circumference scaling).
     let mut s = Skeleton::new();
-    s.add_node(
+    s.start_strand(
         SkeletonPoint {
             position: Vec3::ZERO,
             rotation: Quat::IDENTITY,
@@ -277,30 +259,24 @@ fn test_uv_v_continuous_across_tapered_segments() {
             material_id: 0,
             uv_scale: 1.0,
         },
-        true,
+        None,
     );
-    s.add_node(
-        SkeletonPoint {
-            position: Vec3::Y,
-            rotation: Quat::IDENTITY,
-            radius: 0.1, // Taper
-            color: Vec4::ONE,
-            material_id: 0,
-            uv_scale: 1.0,
-        },
-        false,
-    );
-    s.add_node(
-        SkeletonPoint {
-            position: Vec3::Y * 2.0,
-            rotation: Quat::IDENTITY,
-            radius: 0.05, // Thinner
-            color: Vec4::ONE,
-            material_id: 0,
-            uv_scale: 1.0,
-        },
-        false,
-    );
+    s.push_node(SkeletonPoint {
+        position: Vec3::Y,
+        rotation: Quat::IDENTITY,
+        radius: 0.1, // Taper
+        color: Vec4::ONE,
+        material_id: 0,
+        uv_scale: 1.0,
+    });
+    s.push_node(SkeletonPoint {
+        position: Vec3::Y * 2.0,
+        rotation: Quat::IDENTITY,
+        radius: 0.05, // Thinner
+        color: Vec4::ONE,
+        material_id: 0,
+        uv_scale: 1.0,
+    });
 
     let builder = LSystemMeshBuilder::new().with_resolution(8);
     let meshes = builder.build(&s);

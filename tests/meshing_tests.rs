@@ -7,7 +7,7 @@ use symbios_turtle_3d::{Skeleton, SkeletonPoint};
 fn make_simple_skeleton() -> Skeleton {
     let mut s = Skeleton::new();
     // A single vertical line segment
-    s.add_node(
+    s.start_strand(
         SkeletonPoint {
             position: Vec3::ZERO,
             rotation: Quat::IDENTITY,
@@ -16,19 +16,16 @@ fn make_simple_skeleton() -> Skeleton {
             material_id: 0,
             uv_scale: 1.0,
         },
-        true,
+        None,
     );
-    s.add_node(
-        SkeletonPoint {
-            position: Vec3::new(0.0, 1.0, 0.0),
-            rotation: Quat::IDENTITY,
-            radius: 0.1,
-            color: Vec4::ONE,
-            material_id: 0,
-            uv_scale: 1.0,
-        },
-        false,
-    );
+    s.push_node(SkeletonPoint {
+        position: Vec3::new(0.0, 1.0, 0.0),
+        rotation: Quat::IDENTITY,
+        radius: 0.1,
+        color: Vec4::ONE,
+        material_id: 0,
+        uv_scale: 1.0,
+    });
     s
 }
 
@@ -87,7 +84,7 @@ fn test_vertex_sharing_same_material() {
     // 3 points, same material → 2 segments share the middle ring.
     // Without sharing: 4 rings = 36 vertices. With sharing: 3 rings = 27 vertices.
     let mut s = Skeleton::new();
-    s.add_node(
+    s.start_strand(
         SkeletonPoint {
             position: Vec3::ZERO,
             rotation: Quat::IDENTITY,
@@ -96,30 +93,24 @@ fn test_vertex_sharing_same_material() {
             material_id: 0,
             uv_scale: 1.0,
         },
-        true,
+        None,
     );
-    s.add_node(
-        SkeletonPoint {
-            position: Vec3::Y,
-            rotation: Quat::IDENTITY,
-            radius: 0.1,
-            color: Vec4::ONE,
-            material_id: 0,
-            uv_scale: 1.0,
-        },
-        false,
-    );
-    s.add_node(
-        SkeletonPoint {
-            position: Vec3::Y * 2.0,
-            rotation: Quat::IDENTITY,
-            radius: 0.1,
-            color: Vec4::ONE,
-            material_id: 0,
-            uv_scale: 1.0,
-        },
-        false,
-    );
+    s.push_node(SkeletonPoint {
+        position: Vec3::Y,
+        rotation: Quat::IDENTITY,
+        radius: 0.1,
+        color: Vec4::ONE,
+        material_id: 0,
+        uv_scale: 1.0,
+    });
+    s.push_node(SkeletonPoint {
+        position: Vec3::Y * 2.0,
+        rotation: Quat::IDENTITY,
+        radius: 0.1,
+        color: Vec4::ONE,
+        material_id: 0,
+        uv_scale: 1.0,
+    });
 
     let meshes = LSystemMeshBuilder::default().build(&s);
     let mesh = meshes.get(&0).unwrap();
@@ -140,7 +131,7 @@ fn test_no_vertex_sharing_across_materials() {
     // 3 points, material changes at boundary → no sharing possible.
     // Each segment gets 2 independent rings = 4 rings = 36 vertices.
     let mut s = Skeleton::new();
-    s.add_node(
+    s.start_strand(
         SkeletonPoint {
             position: Vec3::ZERO,
             rotation: Quat::IDENTITY,
@@ -149,30 +140,24 @@ fn test_no_vertex_sharing_across_materials() {
             material_id: 0,
             uv_scale: 1.0,
         },
-        true,
+        None,
     );
-    s.add_node(
-        SkeletonPoint {
-            position: Vec3::Y,
-            rotation: Quat::IDENTITY,
-            radius: 0.1,
-            color: Vec4::ONE,
-            material_id: 1, // Different material for next segment
-            uv_scale: 1.0,
-        },
-        false,
-    );
-    s.add_node(
-        SkeletonPoint {
-            position: Vec3::Y * 2.0,
-            rotation: Quat::IDENTITY,
-            radius: 0.1,
-            color: Vec4::ONE,
-            material_id: 1,
-            uv_scale: 1.0,
-        },
-        false,
-    );
+    s.push_node(SkeletonPoint {
+        position: Vec3::Y,
+        rotation: Quat::IDENTITY,
+        radius: 0.1,
+        color: Vec4::ONE,
+        material_id: 1, // Different material for next segment
+        uv_scale: 1.0,
+    });
+    s.push_node(SkeletonPoint {
+        position: Vec3::Y * 2.0,
+        rotation: Quat::IDENTITY,
+        radius: 0.1,
+        color: Vec4::ONE,
+        material_id: 1,
+        uv_scale: 1.0,
+    });
 
     let meshes = LSystemMeshBuilder::default().build(&s);
 
