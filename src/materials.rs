@@ -84,7 +84,11 @@ impl TextureType {
     /// `bevy_symbios_texture` generator.
     pub fn all_kinds() -> Vec<Self> {
         let mut v = vec![Self::None, Self::Grid, Self::Noise, Self::Checker];
-        v.extend(Self::all_procedural_kinds().into_iter().map(Self::Procedural));
+        v.extend(
+            Self::all_procedural_kinds()
+                .into_iter()
+                .map(Self::Procedural),
+        );
         v
     }
 
@@ -499,7 +503,9 @@ pub fn on_material_settings_changed(
                 foliage_tasks.pending_kind.remove(mat_id);
             }
             inline @ (TextureType::Grid | TextureType::Noise | TextureType::Checker) => {
-                let key = inline.inline_preview_key().expect("matched preview variant");
+                let key = inline
+                    .inline_preview_key()
+                    .expect("matched preview variant");
                 mat.base_color_texture = proc_textures.textures.get(&key).cloned();
                 mat.normal_map_texture = None;
                 mat.metallic_roughness_texture = None;
