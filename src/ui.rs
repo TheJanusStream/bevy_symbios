@@ -8,11 +8,18 @@
 
 use bevy::platform::collections::HashMap;
 use bevy_egui::egui;
+use bevy_symbios_texture::TextureConfig;
 
 use crate::materials::{MaterialSettings, TextureType};
 
 pub use bevy_symbios_texture::ui::{
-    bark_config_editor, leaf_config_editor, slider_debounced, twig_config_editor,
+    ashlar_config_editor, asphalt_config_editor, bark_config_editor, brick_config_editor,
+    cobblestone_config_editor, concrete_config_editor, corrugated_config_editor,
+    encaustic_config_editor, ground_config_editor, iron_grille_config_editor, leaf_config_editor,
+    marble_config_editor, metal_config_editor, pavers_config_editor, plank_config_editor,
+    rock_config_editor, shingle_config_editor, slider_debounced, stained_glass_config_editor,
+    stucco_config_editor, thatch_config_editor, twig_config_editor, wainscoting_config_editor,
+    window_config_editor,
 };
 
 /// Renders a material palette editor widget.
@@ -48,11 +55,8 @@ pub fn material_palette_editor(
         let mut local_emission_strength = current.emission_strength;
         let mut local_roughness = current.roughness;
         let mut local_metallic = current.metallic;
-        let mut local_texture = current.texture;
+        let mut local_texture = current.texture.clone();
         let mut local_uv_scale = current.uv_scale;
-        let mut local_leaf = current.leaf_config.clone();
-        let mut local_twig = current.twig_config.clone();
-        let mut local_bark = current.bark_config.clone();
 
         // mat_regen: triggers texture regeneration (set_changed for sync_material_properties)
         // mat_writeback: slider value changed visually but regen not yet needed (prevents snap-back)
@@ -89,59 +93,64 @@ pub fn material_palette_editor(
                 egui::ComboBox::from_id_salt(format!("mat_tex_{}", mat_id))
                     .selected_text(local_texture.name())
                     .show_ui(ui, |ui| {
-                        for tex_type in TextureType::ALL {
-                            if ui
-                                .selectable_label(local_texture == *tex_type, tex_type.name())
-                                .clicked()
-                            {
-                                local_texture = *tex_type;
+                        for kind in TextureType::all_kinds() {
+                            let selected = local_texture.kind() == kind.kind();
+                            if ui.selectable_label(selected, kind.name()).clicked() && !selected {
+                                local_texture = kind;
                                 mat_regen = true;
                             }
                         }
                     });
             });
 
-            // Foliage-specific parameter editors from bevy_symbios_texture::ui.
+            // Per-variant config editor from bevy_symbios_texture::ui.
             // These return (writeback, regen): writeback is true during drag (prevents snap-back),
             // regen is true only when the drag commits (drag_stopped or non-drag change).
-            match local_texture {
-                TextureType::Leaf => {
-                    let (wb, regen) =
-                        leaf_config_editor(ui, &mut local_leaf, egui::Id::new(mat_id));
-                    mat_writeback |= wb;
-                    mat_regen |= regen;
-                }
-                TextureType::Twig => {
-                    let (wb, regen) =
-                        twig_config_editor(ui, &mut local_twig, egui::Id::new(mat_id));
-                    mat_writeback |= wb;
-                    mat_regen |= regen;
-                }
-                TextureType::Bark => {
-                    let (wb, regen) =
-                        bark_config_editor(ui, &mut local_bark, egui::Id::new(mat_id));
-                    mat_writeback |= wb;
-                    mat_regen |= regen;
-                }
-                _ => {}
+            if let TextureType::Procedural(cfg) = &mut local_texture {
+                let id = egui::Id::new(mat_id);
+                let (wb, regen) = match cfg {
+                    TextureConfig::None => (false, false),
+                    TextureConfig::Leaf(c) => leaf_config_editor(ui, c, id),
+                    TextureConfig::Twig(c) => twig_config_editor(ui, c, id),
+                    TextureConfig::Bark(c) => bark_config_editor(ui, c, id),
+                    TextureConfig::Window(c) => window_config_editor(ui, c, id),
+                    TextureConfig::StainedGlass(c) => stained_glass_config_editor(ui, c, id),
+                    TextureConfig::IronGrille(c) => iron_grille_config_editor(ui, c, id),
+                    TextureConfig::Ground(c) => ground_config_editor(ui, c, id),
+                    TextureConfig::Rock(c) => rock_config_editor(ui, c, id),
+                    TextureConfig::Brick(c) => brick_config_editor(ui, c, id),
+                    TextureConfig::Plank(c) => plank_config_editor(ui, c, id),
+                    TextureConfig::Shingle(c) => shingle_config_editor(ui, c, id),
+                    TextureConfig::Stucco(c) => stucco_config_editor(ui, c, id),
+                    TextureConfig::Concrete(c) => concrete_config_editor(ui, c, id),
+                    TextureConfig::Metal(c) => metal_config_editor(ui, c, id),
+                    TextureConfig::Pavers(c) => pavers_config_editor(ui, c, id),
+                    TextureConfig::Ashlar(c) => ashlar_config_editor(ui, c, id),
+                    TextureConfig::Cobblestone(c) => cobblestone_config_editor(ui, c, id),
+                    TextureConfig::Thatch(c) => thatch_config_editor(ui, c, id),
+                    TextureConfig::Marble(c) => marble_config_editor(ui, c, id),
+                    TextureConfig::Corrugated(c) => corrugated_config_editor(ui, c, id),
+                    TextureConfig::Asphalt(c) => asphalt_config_editor(ui, c, id),
+                    TextureConfig::Wainscoting(c) => wainscoting_config_editor(ui, c, id),
+                    TextureConfig::Encaustic(c) => encaustic_config_editor(ui, c, id),
+                };
+                mat_writeback |= wb;
+                mat_regen |= regen;
             }
         });
 
         // Always write back when any widget changed (including mid-drag) to prevent
         // slider snap-back on the next frame.
-        if mat_regen || mat_writeback {
-            if let Some(s) = settings.get_mut(&mat_id) {
-                s.base_color = local_base_color;
-                s.emission_color = local_emission_color;
-                s.emission_strength = local_emission_strength;
-                s.roughness = local_roughness;
-                s.metallic = local_metallic;
-                s.texture = local_texture;
-                s.uv_scale = local_uv_scale;
-                s.leaf_config = local_leaf;
-                s.twig_config = local_twig;
-                s.bark_config = local_bark;
-            }
+        if (mat_regen || mat_writeback)
+            && let Some(s) = settings.get_mut(&mat_id)
+        {
+            s.base_color = local_base_color;
+            s.emission_color = local_emission_color;
+            s.emission_strength = local_emission_strength;
+            s.roughness = local_roughness;
+            s.metallic = local_metallic;
+            s.texture = local_texture;
+            s.uv_scale = local_uv_scale;
         }
 
         if mat_regen {

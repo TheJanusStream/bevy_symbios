@@ -19,65 +19,181 @@ use bevy::platform::collections::HashMap;
 use bevy::prelude::*;
 use bevy::render::render_resource::{Extent3d, Face, TextureDimension, TextureFormat};
 use bevy::tasks::{AsyncComputeTaskPool, Task, block_on, futures_lite::future};
+use bevy_symbios_texture::TextureConfig;
+use bevy_symbios_texture::ashlar::AshlarGenerator;
+use bevy_symbios_texture::asphalt::AsphaltGenerator;
 use bevy_symbios_texture::bark::{BarkConfig, BarkGenerator};
+use bevy_symbios_texture::brick::BrickGenerator;
+use bevy_symbios_texture::cobblestone::CobblestoneGenerator;
+use bevy_symbios_texture::concrete::ConcreteGenerator;
+use bevy_symbios_texture::corrugated::CorrugatedGenerator;
+use bevy_symbios_texture::encaustic::EncausticGenerator;
 use bevy_symbios_texture::generator::{TextureError, TextureGenerator, TextureMap};
+use bevy_symbios_texture::ground::GroundGenerator;
+use bevy_symbios_texture::iron_grille::IronGrilleGenerator;
 use bevy_symbios_texture::leaf::{LeafConfig, LeafGenerator};
+use bevy_symbios_texture::marble::MarbleGenerator;
+use bevy_symbios_texture::metal::MetalGenerator;
+use bevy_symbios_texture::pavers::PaversGenerator;
+use bevy_symbios_texture::plank::PlankGenerator;
+use bevy_symbios_texture::rock::RockGenerator;
+use bevy_symbios_texture::shingle::ShingleGenerator;
+use bevy_symbios_texture::stained_glass::StainedGlassGenerator;
+use bevy_symbios_texture::stucco::StuccoGenerator;
+use bevy_symbios_texture::thatch::ThatchGenerator;
 use bevy_symbios_texture::twig::{TwigConfig, TwigGenerator};
+use bevy_symbios_texture::wainscoting::WainscotingGenerator;
+use bevy_symbios_texture::window::WindowGenerator;
 use bevy_symbios_texture::{GeneratedHandles, map_to_images, map_to_images_card};
 
+pub use bevy_symbios_texture::TextureConfig as ProceduralTextureConfig;
 pub use bevy_symbios_texture::bark::BarkConfig as BarkTexConfig;
 pub use bevy_symbios_texture::leaf::LeafConfig as LeafTexConfig;
 pub use bevy_symbios_texture::twig::TwigConfig as TwigTexConfig;
 
-/// Available procedural texture types for materials.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, Default, serde::Serialize, serde::Deserialize,
-)]
+/// Available texture types for materials.
+///
+/// Combines the three lightweight inline procedural textures (Grid, Noise,
+/// Checker) used for previews with the full set of procedural generators
+/// from `bevy_symbios_texture` exposed via the [`Procedural`](Self::Procedural)
+/// variant. The `Procedural` variant carries the active config inline so a
+/// single `MaterialSettings.texture` field captures the full state.
+///
+/// `serde(tag = "$type")` keeps existing JSON palettes parseable: payload-less
+/// variants serialise as `{"$type":"None"}`, and `Procedural` writes the inner
+/// `TextureConfig` (which itself is `serde(tag = "$type")`).
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "$type")]
 pub enum TextureType {
     #[default]
     None,
     Grid,
     Noise,
     Checker,
-    /// Procedural leaf silhouette card (alpha-masked, clamp-to-edge).
-    Leaf,
-    /// Procedural twig composite card (alpha-masked, clamp-to-edge).
-    Twig,
-    /// Procedural tileable bark texture.
-    Bark,
+    /// Procedural generator from `bevy_symbios_texture` (Leaf, Twig, Bark,
+    /// Window, StainedGlass, IronGrille, Ground, Rock, Brick, Plank, Shingle,
+    /// Stucco, Concrete, Metal, Pavers, Ashlar, Cobblestone, Thatch, Marble,
+    /// Corrugated, Asphalt, Wainscoting, Encaustic). The active config is
+    /// stored inline.
+    Procedural(TextureConfig),
 }
 
 impl TextureType {
-    pub const ALL: &'static [TextureType] = &[
-        TextureType::None,
-        TextureType::Grid,
-        TextureType::Noise,
-        TextureType::Checker,
-        TextureType::Leaf,
-        TextureType::Twig,
-        TextureType::Bark,
-    ];
+    /// All variants in their default-constructed form, suitable for populating
+    /// a UI dropdown. The order is: built-in previews first, then every
+    /// `bevy_symbios_texture` generator.
+    pub fn all_kinds() -> Vec<Self> {
+        let mut v = vec![Self::None, Self::Grid, Self::Noise, Self::Checker];
+        v.extend(Self::all_procedural_kinds().into_iter().map(Self::Procedural));
+        v
+    }
 
-    pub fn name(&self) -> &'static str {
+    /// Default-constructed `TextureConfig` for every generator variant —
+    /// excludes `TextureConfig::None`.
+    pub fn all_procedural_kinds() -> Vec<TextureConfig> {
+        use bevy_symbios_texture::ashlar::AshlarConfig;
+        use bevy_symbios_texture::asphalt::AsphaltConfig;
+        use bevy_symbios_texture::brick::BrickConfig;
+        use bevy_symbios_texture::cobblestone::CobblestoneConfig;
+        use bevy_symbios_texture::concrete::ConcreteConfig;
+        use bevy_symbios_texture::corrugated::CorrugatedConfig;
+        use bevy_symbios_texture::encaustic::EncausticConfig;
+        use bevy_symbios_texture::ground::GroundConfig;
+        use bevy_symbios_texture::iron_grille::IronGrilleConfig;
+        use bevy_symbios_texture::marble::MarbleConfig;
+        use bevy_symbios_texture::metal::MetalConfig;
+        use bevy_symbios_texture::pavers::PaversConfig;
+        use bevy_symbios_texture::plank::PlankConfig;
+        use bevy_symbios_texture::rock::RockConfig;
+        use bevy_symbios_texture::shingle::ShingleConfig;
+        use bevy_symbios_texture::stained_glass::StainedGlassConfig;
+        use bevy_symbios_texture::stucco::StuccoConfig;
+        use bevy_symbios_texture::thatch::ThatchConfig;
+        use bevy_symbios_texture::wainscoting::WainscotingConfig;
+        use bevy_symbios_texture::window::WindowConfig;
+        vec![
+            TextureConfig::Leaf(LeafConfig::default()),
+            TextureConfig::Twig(TwigConfig::default()),
+            TextureConfig::Bark(BarkConfig::default()),
+            TextureConfig::Window(WindowConfig::default()),
+            TextureConfig::StainedGlass(StainedGlassConfig::default()),
+            TextureConfig::IronGrille(IronGrilleConfig::default()),
+            TextureConfig::Ground(GroundConfig::default()),
+            TextureConfig::Rock(RockConfig::default()),
+            TextureConfig::Brick(BrickConfig::default()),
+            TextureConfig::Plank(PlankConfig::default()),
+            TextureConfig::Shingle(ShingleConfig::default()),
+            TextureConfig::Stucco(StuccoConfig::default()),
+            TextureConfig::Concrete(ConcreteConfig::default()),
+            TextureConfig::Metal(MetalConfig::default()),
+            TextureConfig::Pavers(PaversConfig::default()),
+            TextureConfig::Ashlar(AshlarConfig::default()),
+            TextureConfig::Cobblestone(CobblestoneConfig::default()),
+            TextureConfig::Thatch(ThatchConfig::default()),
+            TextureConfig::Marble(MarbleConfig::default()),
+            TextureConfig::Corrugated(CorrugatedConfig::default()),
+            TextureConfig::Asphalt(AsphaltConfig::default()),
+            TextureConfig::Wainscoting(WainscotingConfig::default()),
+            TextureConfig::Encaustic(EncausticConfig::default()),
+        ]
+    }
+
+    /// Stable identifier used for variant comparison; cheap to compare without
+    /// allocation. `Procedural(_)` returns the inner config's label
+    /// (e.g. `"Leaf"`, `"Brick"`) so two configs of the same generator share
+    /// a kind even if their parameters differ.
+    pub fn kind(&self) -> &'static str {
         match self {
-            TextureType::None => "None",
-            TextureType::Grid => "Grid",
-            TextureType::Noise => "Noise",
-            TextureType::Checker => "Checker",
-            TextureType::Leaf => "Leaf",
-            TextureType::Twig => "Twig",
-            TextureType::Bark => "Bark",
+            Self::None => "None",
+            Self::Grid => "Grid",
+            Self::Noise => "Noise",
+            Self::Checker => "Checker",
+            Self::Procedural(c) => c.label(),
         }
     }
 
-    /// Returns `true` for foliage card types that need alpha-mask rendering.
-    pub fn is_foliage_card(self) -> bool {
-        matches!(self, TextureType::Leaf | TextureType::Twig)
+    /// Display name for UI labels — same as [`kind`](Self::kind).
+    pub fn name(&self) -> &'static str {
+        self.kind()
+    }
+
+    /// Returns `true` for foliage card / alpha-masked types that need
+    /// clamp-to-edge sampling and double-sided rendering.
+    pub fn is_foliage_card(&self) -> bool {
+        match self {
+            Self::Procedural(c) => c.render_properties().is_card,
+            _ => false,
+        }
+    }
+
+    /// Texture key for [`ProceduralTextures`] — only meaningful for the inline
+    /// preview variants. Returns `None` for any other variant.
+    pub fn inline_preview_key(&self) -> Option<InlineTextureKey> {
+        match self {
+            Self::Grid => Some(InlineTextureKey::Grid),
+            Self::Noise => Some(InlineTextureKey::Noise),
+            Self::Checker => Some(InlineTextureKey::Checker),
+            _ => None,
+        }
     }
 }
 
+/// Key for the [`ProceduralTextures`] inline-preview map. Decoupled from
+/// [`TextureType`] so the latter can carry payloads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum InlineTextureKey {
+    Grid,
+    Noise,
+    Checker,
+}
+
 /// Per-material PBR settings for UI editing and export.
-#[derive(Clone, serde::Serialize, serde::Deserialize)]
+///
+/// The `texture` field selects either an inline preview texture (Grid, Noise,
+/// Checker) or a `bevy_symbios_texture` generator config carried inline via
+/// [`TextureType::Procedural`]. There are no longer separate config fields for
+/// each generator — the active config lives inside the variant.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
 pub struct MaterialSettings {
     pub base_color: [f32; 3],
@@ -87,12 +203,6 @@ pub struct MaterialSettings {
     pub metallic: f32,
     pub texture: TextureType,
     pub uv_scale: f32,
-    /// Config for procedural leaf texture (active when `texture == TextureType::Leaf`).
-    pub leaf_config: LeafConfig,
-    /// Config for procedural twig texture (active when `texture == TextureType::Twig`).
-    pub twig_config: TwigConfig,
-    /// Config for procedural bark texture (active when `texture == TextureType::Bark`).
-    pub bark_config: BarkConfig,
 }
 
 impl Default for MaterialSettings {
@@ -105,9 +215,6 @@ impl Default for MaterialSettings {
             metallic: 0.0,
             texture: TextureType::None,
             uv_scale: 1.0,
-            leaf_config: LeafConfig::default(),
-            twig_config: TwigConfig::default(),
-            bark_config: BarkConfig::default(),
         }
     }
 }
@@ -132,7 +239,6 @@ impl Default for MaterialSettingsMap {
                 metallic: 0.8,
                 texture: TextureType::None,
                 uv_scale: 1.0,
-                ..Default::default()
             },
         );
 
@@ -146,7 +252,6 @@ impl Default for MaterialSettingsMap {
                 metallic: 0.0,
                 texture: TextureType::None,
                 uv_scale: 1.0,
-                ..Default::default()
             },
         );
 
@@ -160,7 +265,6 @@ impl Default for MaterialSettingsMap {
                 metallic: 0.0,
                 texture: TextureType::None,
                 uv_scale: 1.0,
-                ..Default::default()
             },
         );
 
@@ -176,26 +280,27 @@ pub struct MaterialPalette {
     pub primary_material: Handle<StandardMaterial>,
 }
 
-/// Stores procedural texture handles for simple (non-async) material customization.
+/// Stores procedural texture handles for simple (non-async) inline preview
+/// textures (Grid, Noise, Checker).
 #[derive(Resource)]
 pub struct ProceduralTextures {
-    pub textures: HashMap<TextureType, Handle<Image>>,
+    pub textures: HashMap<InlineTextureKey, Handle<Image>>,
 }
 
-/// Tracks in-flight async foliage texture generation tasks.
+/// Tracks in-flight async procedural texture generation tasks.
 ///
 /// Keyed by material ID. Each entry holds the background task and whether the
 /// result should be uploaded with card (clamp-to-edge) or tile (repeat) samplers.
 ///
-/// `pending_type` records the texture type of the currently running task so that
-/// `sync_material_properties` can skip re-spawning while a same-type task is
-/// already in flight.  It is cleared when the task completes so the next config
-/// change triggers a fresh generation.
+/// `pending_kind` records the variant kind (e.g. `"Leaf"`, `"Brick"`) of the
+/// currently running task per material ID so the observer can skip re-spawning
+/// while a same-kind task is already in flight. Cleared when the task completes
+/// so the next config change triggers a fresh generation.
 #[derive(Resource, Default)]
 pub struct FoliageTextureTasks {
     tasks: HashMap<u16, (Task<Result<TextureMap, TextureError>>, bool)>,
-    /// Texture type of the currently pending task per material ID.
-    pending_type: HashMap<u16, TextureType>,
+    /// Kind label of the currently pending task per material ID.
+    pending_kind: HashMap<u16, &'static str>,
 }
 
 // ---------------------------------------------------------------------------
@@ -279,15 +384,15 @@ pub fn setup_material_assets(
     let mut proc_textures = HashMap::new();
 
     proc_textures.insert(
-        TextureType::Grid,
+        InlineTextureKey::Grid,
         images.add(create_image(generate_grid_texture(TEX_SIZE, 2), TEX_SIZE)),
     );
     proc_textures.insert(
-        TextureType::Noise,
+        InlineTextureKey::Noise,
         images.add(create_image(generate_noise_texture(TEX_SIZE, 42), TEX_SIZE)),
     );
     proc_textures.insert(
-        TextureType::Checker,
+        InlineTextureKey::Checker,
         images.add(create_image(
             generate_checker_texture(TEX_SIZE, 32),
             TEX_SIZE,
@@ -382,7 +487,7 @@ pub fn on_material_settings_changed(
 
         mat.uv_transform = Affine2::from_scale(Vec2::splat(settings.uv_scale));
 
-        match settings.texture {
+        match &settings.texture {
             TextureType::None => {
                 mat.base_color_texture = None;
                 mat.normal_map_texture = None;
@@ -391,67 +496,84 @@ pub fn on_material_settings_changed(
                 mat.double_sided = false;
                 mat.cull_mode = Some(Face::Back);
                 foliage_tasks.tasks.remove(mat_id);
-                foliage_tasks.pending_type.remove(mat_id);
+                foliage_tasks.pending_kind.remove(mat_id);
             }
-            TextureType::Grid | TextureType::Noise | TextureType::Checker => {
-                mat.base_color_texture = proc_textures.textures.get(&settings.texture).cloned();
+            inline @ (TextureType::Grid | TextureType::Noise | TextureType::Checker) => {
+                let key = inline.inline_preview_key().expect("matched preview variant");
+                mat.base_color_texture = proc_textures.textures.get(&key).cloned();
                 mat.normal_map_texture = None;
                 mat.metallic_roughness_texture = None;
                 mat.alpha_mode = AlphaMode::Opaque;
                 mat.double_sided = false;
                 mat.cull_mode = Some(Face::Back);
                 foliage_tasks.tasks.remove(mat_id);
-                foliage_tasks.pending_type.remove(mat_id);
+                foliage_tasks.pending_kind.remove(mat_id);
             }
-            TextureType::Leaf => {
-                // Apply alpha-mask settings immediately; texture arrives async.
-                mat.alpha_mode = AlphaMode::Mask(0.5);
-                mat.double_sided = true;
-                mat.cull_mode = None;
+            TextureType::Procedural(cfg) => {
+                let render_props = cfg.render_properties();
+                mat.alpha_mode = render_props.alpha_mode;
+                mat.double_sided = render_props.double_sided;
+                mat.cull_mode = render_props.cull_mode;
 
-                // Only spawn if no same-type task is already in flight.
-                if foliage_tasks.pending_type.get(mat_id) != Some(&TextureType::Leaf) {
-                    let config = settings.leaf_config.clone();
-                    let task =
-                        pool.spawn(async move { LeafGenerator::new(config).generate(512, 512) });
-                    foliage_tasks.tasks.insert(*mat_id, (task, true));
-                    foliage_tasks
-                        .pending_type
-                        .insert(*mat_id, TextureType::Leaf);
+                let kind = cfg.label();
+                if foliage_tasks.pending_kind.get(mat_id).copied() == Some(kind) {
+                    continue;
                 }
-            }
-            TextureType::Twig => {
-                mat.alpha_mode = AlphaMode::Mask(0.5);
-                mat.double_sided = true;
-                mat.cull_mode = None;
-
-                if foliage_tasks.pending_type.get(mat_id) != Some(&TextureType::Twig) {
-                    let config = settings.twig_config.clone();
-                    let task =
-                        pool.spawn(async move { TwigGenerator::new(config).generate(512, 512) });
-                    foliage_tasks.tasks.insert(*mat_id, (task, true));
+                if let Some(task) = spawn_generator_task(pool, cfg) {
                     foliage_tasks
-                        .pending_type
-                        .insert(*mat_id, TextureType::Twig);
-                }
-            }
-            TextureType::Bark => {
-                mat.alpha_mode = AlphaMode::Opaque;
-                mat.double_sided = false;
-                mat.cull_mode = Some(Face::Back);
-
-                if foliage_tasks.pending_type.get(mat_id) != Some(&TextureType::Bark) {
-                    let config = settings.bark_config.clone();
-                    let task =
-                        pool.spawn(async move { BarkGenerator::new(config).generate(512, 512) });
-                    foliage_tasks.tasks.insert(*mat_id, (task, false));
-                    foliage_tasks
-                        .pending_type
-                        .insert(*mat_id, TextureType::Bark);
+                        .tasks
+                        .insert(*mat_id, (task, render_props.is_card));
+                    foliage_tasks.pending_kind.insert(*mat_id, kind);
+                } else {
+                    // TextureConfig::None — should not occur in Procedural; clear safely.
+                    foliage_tasks.tasks.remove(mat_id);
+                    foliage_tasks.pending_kind.remove(mat_id);
                 }
             }
         }
     }
+}
+
+/// Dispatches a [`TextureConfig`] variant to its corresponding generator and
+/// spawns the work onto the async compute pool. Returns `None` for
+/// [`TextureConfig::None`] (no generation).
+fn spawn_generator_task(
+    pool: &AsyncComputeTaskPool,
+    cfg: &TextureConfig,
+) -> Option<Task<Result<TextureMap, TextureError>>> {
+    macro_rules! gen_task {
+        ($Generator:ident, $cfg:expr) => {{
+            let cfg = $cfg.clone();
+            pool.spawn(async move { $Generator::new(cfg).generate(512, 512) })
+        }};
+    }
+    let task = match cfg {
+        TextureConfig::None => return None,
+        TextureConfig::Leaf(c) => gen_task!(LeafGenerator, c),
+        TextureConfig::Twig(c) => gen_task!(TwigGenerator, c),
+        TextureConfig::Bark(c) => gen_task!(BarkGenerator, c),
+        TextureConfig::Window(c) => gen_task!(WindowGenerator, c),
+        TextureConfig::StainedGlass(c) => gen_task!(StainedGlassGenerator, c),
+        TextureConfig::IronGrille(c) => gen_task!(IronGrilleGenerator, c),
+        TextureConfig::Ground(c) => gen_task!(GroundGenerator, c),
+        TextureConfig::Rock(c) => gen_task!(RockGenerator, c),
+        TextureConfig::Brick(c) => gen_task!(BrickGenerator, c),
+        TextureConfig::Plank(c) => gen_task!(PlankGenerator, c),
+        TextureConfig::Shingle(c) => gen_task!(ShingleGenerator, c),
+        TextureConfig::Stucco(c) => gen_task!(StuccoGenerator, c),
+        TextureConfig::Concrete(c) => gen_task!(ConcreteGenerator, c),
+        TextureConfig::Metal(c) => gen_task!(MetalGenerator, c),
+        TextureConfig::Pavers(c) => gen_task!(PaversGenerator, c),
+        TextureConfig::Ashlar(c) => gen_task!(AshlarGenerator, c),
+        TextureConfig::Cobblestone(c) => gen_task!(CobblestoneGenerator, c),
+        TextureConfig::Thatch(c) => gen_task!(ThatchGenerator, c),
+        TextureConfig::Marble(c) => gen_task!(MarbleGenerator, c),
+        TextureConfig::Corrugated(c) => gen_task!(CorrugatedGenerator, c),
+        TextureConfig::Asphalt(c) => gen_task!(AsphaltGenerator, c),
+        TextureConfig::Wainscoting(c) => gen_task!(WainscotingGenerator, c),
+        TextureConfig::Encaustic(c) => gen_task!(EncausticGenerator, c),
+    };
+    Some(task)
 }
 
 /// Update system that polls completed foliage texture tasks and applies the
@@ -483,7 +605,7 @@ pub fn apply_foliage_textures(
     for (mat_id, result, is_card) in finished {
         foliage_tasks.tasks.remove(&mat_id);
         // Clear pending marker so the next config change can spawn a fresh task.
-        foliage_tasks.pending_type.remove(&mat_id);
+        foliage_tasks.pending_kind.remove(&mat_id);
 
         let map = match result {
             Ok(m) => m,
