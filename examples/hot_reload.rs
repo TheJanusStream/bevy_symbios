@@ -46,10 +46,10 @@ fn report_changes(
         }
     }
     for ev in palette_events.read() {
-        if let AssetEvent::Added { id } | AssetEvent::Modified { id } = ev {
-            if let Some(palette) = palettes.get(*id) {
-                info!("Material palette (re)loaded: {} entries", palette.0.len());
-            }
+        if let AssetEvent::Added { id } | AssetEvent::Modified { id } = ev
+            && let Some(palette) = palettes.get(*id)
+        {
+            info!("Material palette (re)loaded: {} entries", palette.0.len());
         }
     }
 }

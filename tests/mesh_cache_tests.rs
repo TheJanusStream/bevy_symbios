@@ -1,5 +1,6 @@
+use bevy::platform::collections::HashMap;
 use bevy::prelude::*;
-use bevy_symbios::{LSystemMeshBuilder, MeshCache};
+use bevy_symbios::{LSystemMeshBuilder, MeshCache, compute_skeleton_fingerprint};
 use symbios_turtle_3d::{Skeleton, SkeletonPoint};
 
 fn make_skeleton(positions: &[Vec3]) -> Skeleton {
@@ -137,4 +138,75 @@ fn clear_drops_all_entries() {
     assert_eq!(cache.len(), 1);
     cache.clear();
     assert!(cache.is_empty());
+}
+
+#[test]
+fn build_cached_bumps_hits_and_misses() {
+    let mut app = test_app();
+    let skel = make_skeleton(&[Vec3::ZERO, Vec3::Y, Vec3::Y * 2.0]);
+    let mut cache = MeshCache::new();
+
+    {
+        let mut meshes = app.world_mut().resource_mut::<Assets<Mesh>>();
+        LSystemMeshBuilder::new().build_cached(&skel, &mut cache, &mut meshes);
+    }
+    assert_eq!(cache.misses(), 1, "first build must record a miss");
+    assert_eq!(cache.hits(), 0);
+
+    {
+        let mut meshes = app.world_mut().resource_mut::<Assets<Mesh>>();
+        LSystemMeshBuilder::new().build_cached(&skel, &mut cache, &mut meshes);
+    }
+    assert_eq!(cache.misses(), 1, "second build must hit, not miss");
+    assert_eq!(cache.hits(), 1);
+}
+
+#[test]
+fn reset_stats_clears_counters_but_keeps_entries() {
+    let mut app = test_app();
+    let skel = make_skeleton(&[Vec3::ZERO, Vec3::Y]);
+    let mut cache = MeshCache::new();
+    {
+        let mut meshes = app.world_mut().resource_mut::<Assets<Mesh>>();
+        LSystemMeshBuilder::new().build_cached(&skel, &mut cache, &mut meshes);
+    }
+    assert_eq!(cache.misses(), 1);
+    assert_eq!(cache.len(), 1);
+    cache.reset_stats();
+    assert_eq!(cache.misses(), 0);
+    assert_eq!(cache.hits(), 0);
+    assert_eq!(cache.len(), 1, "reset_stats must not drop entries");
+}
+
+#[test]
+fn get_or_insert_with_supports_external_fingerprints() {
+    let skel = make_skeleton(&[Vec3::ZERO, Vec3::Y]);
+    let fingerprint = compute_skeleton_fingerprint(&skel, 6);
+    let mut cache = MeshCache::new();
+
+    let made: HashMap<u16, Handle<Mesh>> = {
+        let mut map = HashMap::default();
+        map.insert(0u16, Handle::<Mesh>::default());
+        map
+    };
+
+    // First call: miss — runs the closure.
+    let mut closure_calls = 0;
+    let h1 = cache.get_or_insert_with(fingerprint, || {
+        closure_calls += 1;
+        made.clone()
+    });
+    assert_eq!(closure_calls, 1);
+    assert_eq!(cache.misses(), 1);
+    assert_eq!(cache.hits(), 0);
+    assert_eq!(cache.len(), 1);
+
+    // Second call: hit — closure not invoked.
+    let h2 = cache.get_or_insert_with(fingerprint, || {
+        closure_calls += 1;
+        made.clone()
+    });
+    assert_eq!(closure_calls, 1, "closure must not run on hit");
+    assert_eq!(cache.hits(), 1);
+    assert_eq!(h1.get(&0).unwrap().id(), h2.get(&0).unwrap().id());
 }

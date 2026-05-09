@@ -34,3 +34,10 @@ optional = true
 [dev-dependencies]
 glam = "0.30.10"
 avian3d = "0.6"
+
+# `hot_reload` consumes `bevy_symbios::loader::*`, which is feature-gated
+# behind `asset-loader`. Marking it `required-features` makes cargo skip the
+# example when that feature is off (rather than failing to resolve the import).
+[[example]]
+name = "hot_reload"
+required-features = ["asset-loader"]

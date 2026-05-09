@@ -1,3 +1,8 @@
+// `ColliderGenerator` only exists when the `physics` feature is enabled —
+// the entire suite is therefore gated. Without this gate, `cargo test`
+// without `--features physics` fails on the import alone.
+#![cfg(feature = "physics")]
+
 use bevy::prelude::*;
 use bevy_symbios::ColliderGenerator;
 use symbios_turtle_3d::{Skeleton, SkeletonPoint};
@@ -221,8 +226,8 @@ fn test_multi_segment_strand() {
 
     // Check centers are at Y=0.5 and Y=1.5
     let centers: Vec<f32> = parts.iter().map(|c| c.transform.translation.y).collect();
-    assert!(centers.iter().any(|&y| (y - 0.5).abs() < 0.001));
-    assert!(centers.iter().any(|&y| (y - 1.5).abs() < 0.001));
+    assert!(centers.iter().any(|&y| (y - 0.5_f32).abs() < 0.001));
+    assert!(centers.iter().any(|&y| (y - 1.5_f32).abs() < 0.001));
 
     // Compound build should produce a single collider
     let compound = generator.build(&s);

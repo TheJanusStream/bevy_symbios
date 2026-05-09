@@ -77,7 +77,7 @@ pub mod ui;
 #[cfg(feature = "asset-loader")]
 pub mod loader;
 
-pub use mesher::{LSystemMeshBuilder, MeshCache};
+pub use mesher::{LSystemMeshBuilder, MeshCache, compute_skeleton_fingerprint};
 
 #[cfg(feature = "physics")]
 pub use collider::{ColliderGenerator, PositionedCollider};

@@ -329,15 +329,28 @@ impl LSystemMeshBuilder {
 /// previous entry remains in the cache until [`MeshCache::clear`] is called —
 /// the cache does not LRU-evict on its own.
 ///
+/// # Parity with `bevy_symbios_shape::ShapeMeshCache`
+///
+/// This cache deliberately mirrors the API surface of
+/// `bevy_symbios_shape::ShapeMeshCache` so that downstream apps can wire
+/// procedural-mesh observability uniformly across both pipelines. Both expose
+/// `get_or_insert_with`, `len`, `is_empty`, `clear`, and `hits` / `misses` /
+/// `reset_stats` cumulative counters. The two caches stay separate types
+/// (different keys, different value shapes — opaque skeleton fingerprint →
+/// `HashMap<material_id, Handle<Mesh>>` here vs. structured terminal key →
+/// single `Handle<Mesh>` there), but the operational vocabulary is shared.
+///
 /// # Trade-off
 ///
 /// Caching trades memory for CPU. Each cached entry keeps its [`Mesh`] assets
 /// alive (the [`Handle`]s live in the cache). For long-running scenes that
 /// generate many unique skeletons, call [`MeshCache::clear`] periodically to
 /// release them, or manage a coarser eviction policy at the application layer.
-#[derive(Resource, Default)]
+#[derive(Resource, Default, Debug)]
 pub struct MeshCache {
     entries: HashMap<u64, HashMap<u16, Handle<Mesh>>>,
+    hits: u64,
+    misses: u64,
 }
 
 impl MeshCache {
@@ -355,17 +368,72 @@ impl MeshCache {
 
     /// Drop all cached entries, releasing the underlying [`Handle<Mesh>`]
     /// references. The mesh assets are freed once no other strong handles
-    /// remain.
+    /// remain. Hit/miss counters are preserved (use [`Self::reset_stats`]).
     pub fn clear(&mut self) {
         self.entries.clear();
     }
 
     /// Returns `true` if a fingerprint matching the given skeleton+resolution
-    /// is already cached. Useful for tests and instrumentation.
+    /// is already cached. Useful for tests and instrumentation. This does
+    /// not bump the hit/miss counters.
     pub fn contains(&self, skeleton: &Skeleton, resolution: u32) -> bool {
         self.entries
             .contains_key(&compute_fingerprint(skeleton, resolution))
     }
+
+    /// Cumulative cache hits since construction (or last [`Self::reset_stats`]).
+    /// Bumped by [`LSystemMeshBuilder::build_cached`] and by
+    /// [`Self::get_or_insert_with`].
+    pub fn hits(&self) -> u64 {
+        self.hits
+    }
+
+    /// Cumulative cache misses since construction (or last [`Self::reset_stats`]).
+    pub fn misses(&self) -> u64 {
+        self.misses
+    }
+
+    /// Reset hit/miss counters without clearing entries. The cached
+    /// [`Handle<Mesh>`]s remain live.
+    pub fn reset_stats(&mut self) {
+        self.hits = 0;
+        self.misses = 0;
+    }
+
+    /// Lookup-or-build by an explicit fingerprint. Returns a clone of the
+    /// cached entry on hit (incrementing `hits`), or runs `build`, inserts
+    /// the resulting handles, and returns them (incrementing `misses`).
+    ///
+    /// Callers driving caching outside of [`LSystemMeshBuilder::build_cached`]
+    /// — e.g. mixing skeleton-derived meshes with externally-supplied ones
+    /// under a custom fingerprint — should reach for this. Use
+    /// [`compute_skeleton_fingerprint`] to derive the same fingerprint
+    /// `build_cached` uses.
+    pub fn get_or_insert_with<F>(
+        &mut self,
+        fingerprint: u64,
+        build: F,
+    ) -> HashMap<u16, Handle<Mesh>>
+    where
+        F: FnOnce() -> HashMap<u16, Handle<Mesh>>,
+    {
+        if let Some(handles) = self.entries.get(&fingerprint) {
+            self.hits += 1;
+            return handles.clone();
+        }
+        self.misses += 1;
+        let handles = build();
+        self.entries.insert(fingerprint, handles.clone());
+        handles
+    }
+}
+
+/// Hash a skeleton + resolution down to the same `u64` fingerprint
+/// [`LSystemMeshBuilder::build_cached`] uses internally. Exposed so callers
+/// of [`MeshCache::get_or_insert_with`] can produce keys that collide with
+/// the builder's own.
+pub fn compute_skeleton_fingerprint(skeleton: &Skeleton, resolution: u32) -> u64 {
+    compute_fingerprint(skeleton, resolution)
 }
 
 impl LSystemMeshBuilder {
@@ -373,7 +441,7 @@ impl LSystemMeshBuilder {
     /// cache hit, returns the cached [`Handle<Mesh>`]s without re-meshing.
     /// On a miss, builds the meshes, inserts them into `meshes`, stores the
     /// resulting handles in the cache under the skeleton's fingerprint, and
-    /// returns them.
+    /// returns them. Bumps the cache's `hits`/`misses` counters accordingly.
     ///
     /// Callers that re-spawn the same L-system many times (props, tile-based
     /// foliage, deterministic regrowth) should prefer this over `build`.
@@ -385,8 +453,10 @@ impl LSystemMeshBuilder {
     ) -> HashMap<u16, Handle<Mesh>> {
         let fingerprint = compute_fingerprint(skeleton, self.resolution);
         if let Some(handles) = cache.entries.get(&fingerprint) {
+            cache.hits += 1;
             return handles.clone();
         }
+        cache.misses += 1;
         let mesh_buckets = self.build(skeleton);
         let handles: HashMap<u16, Handle<Mesh>> = mesh_buckets
             .into_iter()
