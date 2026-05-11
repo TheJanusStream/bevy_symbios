@@ -201,50 +201,41 @@ let glb_bytes = meshes_to_glb(&mesh_map, &material_settings_map.settings);
 
 ### `LSystemMeshBuilder`
 
-| Method | Description |
-|--------|-------------|
-| `new()` | Create builder with default resolution (8) |
-| `with_resolution(n)` | Set vertices per ring (min 3) |
-| `build(&skeleton)` | Convert to `HashMap<u8, Mesh>` |
+| Method               | Description                                |
+|----------------------|--------------------------------------------|
+| `new()`              | Create builder with default resolution (8) |
+| `with_resolution(n)` | Set vertices per ring (min 3)              |
+| `build(&skeleton)`   | Convert to `HashMap<u8, Mesh>`             |
 
 ### `ColliderGenerator` (requires `physics` feature)
 
-| Method | Description |
-|--------|-------------|
-| `new()` | Create generator with no filtering |
-| `with_min_radius(r)` | Skip segments thinner than `r` |
-| `build(&skeleton)` | Generate `Option<Collider>` (single compound collider) |
+| Method                   | Description                                              |
+|--------------------------|----------------------------------------------------------|
+| `new()`                  | Create generator with no filtering                       |
+| `with_min_radius(r)`     | Skip segments thinner than `r`                           |
+| `build(&skeleton)`       | Generate `Option<Collider>` (single compound collider)   |
 | `build_parts(&skeleton)` | Generate `Vec<PositionedCollider>` (individual segments) |
 
 ### `PositionedCollider`
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `transform` | `Transform` | World-space position and rotation |
-| `collider` | `Collider` | Avian3D capsule (or sphere for short segments) |
-| `radius` | `f32` | Average segment radius |
-| `length` | `f32` | Segment length |
+| Field       | Type        | Description                                    |
+|-------------|-------------|------------------------------------------------|
+| `transform` | `Transform` | World-space position and rotation              |
+| `collider`  | `Collider`  | Avian3D capsule (or sphere for short segments) |
+| `radius`    | `f32`       | Average segment radius                         |
+| `length`    | `f32`       | Segment length                                 |
 
 ## Mesh Attributes
 
 Generated meshes include:
 
-| Attribute | Description |
-|-----------|-------------|
-| `POSITION` | Vertex positions |
-| `NORMAL` | Smooth normals |
-| `COLOR` | RGBA vertex colors for local tinting (`SkeletonPoint::color`) |
-| `UV_0` | Texture coordinates (U: around tube, V: along strand, scaled by `uv_scale`) |
-| `TANGENT` | Tangent vectors (auto-generated for normal mapping) |
-
-## Ecosystem
-
-```
-symbios (derivation engine)
-  └── symbios-turtle-3d (3D interpreter)
-        └── bevy_symbios (Bevy meshes, materials, export, UI)
-              └── lsystem-explorer (interactive application)
-```
+| Attribute  | Description                                                                 |
+|------------|-----------------------------------------------------------------------------|
+| `POSITION` | Vertex positions                                                            |
+| `NORMAL`   | Smooth normals                                                              |
+| `COLOR`    | RGBA vertex colors for local tinting (`SkeletonPoint::color`)               |
+| `UV_0`     | Texture coordinates (U: around tube, V: along strand, scaled by `uv_scale`) |
+| `TANGENT`  | Tangent vectors (auto-generated for normal mapping)                         |
 
 ## License
 
