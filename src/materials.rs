@@ -8,9 +8,11 @@
 //!
 //! 1. Add [`setup_material_assets`] as a `Startup` system to create textures and palette.
 //! 2. Insert [`MaterialSettingsMap`] as a resource (or use `init_resource`).
-//! 3. Add [`sync_material_properties`] and [`apply_foliage_textures`] to your `Update` schedule.
-//! 4. Mutate [`MaterialSettingsMap`] from your UI or game logic; the sync system detects
-//!    changes automatically via Bevy's change detection.
+//! 3. Register the [`on_material_settings_changed`] observer (`app.add_observer(...)`)
+//!    and add [`apply_foliage_textures`] to your `Update` schedule.
+//! 4. Mutate [`MaterialSettingsMap`] from your UI or game logic, then fire
+//!    `commands.trigger(MaterialSettingsChanged)` so the observer applies the new
+//!    values. There is no implicit `is_changed()` polling — the trigger is required.
 
 use bevy::asset::RenderAssetUsages;
 use bevy::image::{ImageAddressMode, ImageSampler, ImageSamplerDescriptor};
@@ -378,7 +380,8 @@ fn create_image(data: Vec<u8>, size: u32) -> Image {
 /// Startup system that creates procedural textures and a default material palette.
 ///
 /// Inserts [`ProceduralTextures`], [`MaterialPalette`], and [`FoliageTextureTasks`] resources.
-/// Pair with [`sync_material_properties`] and [`apply_foliage_textures`] in your update schedule.
+/// Pair with the [`on_material_settings_changed`] observer (registered via
+/// `app.add_observer(...)`) and the [`apply_foliage_textures`] update system.
 pub fn setup_material_assets(
     mut commands: Commands,
     mut materials: ResMut<Assets<StandardMaterial>>,

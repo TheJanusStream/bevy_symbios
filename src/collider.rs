@@ -72,7 +72,7 @@ impl ColliderGenerator {
     /// Generates individual positioned colliders for each qualifying segment.
     ///
     /// Useful for debugging, visualization, or custom compound construction.
-    /// For most use cases, prefer [`build`] which returns a single compound collider.
+    /// For most use cases, prefer [`Self::build`] which returns a single compound collider.
     pub fn build_parts(&self, skeleton: &Skeleton) -> Vec<PositionedCollider> {
         let mut colliders = Vec::new();
 

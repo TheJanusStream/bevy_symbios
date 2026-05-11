@@ -1,3 +1,20 @@
+//! Spawn articulated rigid-body robots from `symbios-robot` blueprints.
+//!
+//! Requires the `robot` Cargo feature (which implies `physics`). Each
+//! [`RobotBlueprint`] module becomes a dynamic [`RigidBody`] with the matching
+//! collider, mesh, and material; each blueprint joint becomes an avian3d
+//! constraint (`FixedJoint`, `RevoluteJoint`, `SphericalJoint`, or
+//! `PrismaticJoint`). `JointType::Screw` is unsupported by avian3d and is
+//! approximated as `Fixed` with a warning.
+//!
+//! Hinge and prismatic joints with per-axis [`AxisLimit`] entries pick the
+//! limit whose `axis` is parallel to the drive axis and install an angular or
+//! linear motor with that entry's effort/velocity.
+//!
+//! Sensors declared on a module ([`SensorType::IMU`], [`SensorType::Touch`])
+//! are attached as [`ImuSensor`] / [`TouchSensor`] components. Other sensor
+//! kinds are currently ignored.
+
 use crate::materials::MaterialPalette;
 use avian3d::prelude::*;
 use bevy::prelude::*;
@@ -39,6 +56,19 @@ pub struct SpawnedRobot {
     pub sensors: Vec<(Entity, SensorType)>,
 }
 
+/// Spawn a [`RobotBlueprint`] into the world.
+///
+/// Modules are spawned in `ModuleId` order (so [`SpawnedRobot::sensors`] is
+/// deterministic), each with `RigidBody::Dynamic`, its [`ShapePrimitive`]
+/// converted to both a Bevy mesh and an avian3d collider, and a
+/// [`MassPropertiesBundle`] derived from the shape and density. Each module's
+/// material is looked up in `palette` by `material_id`, falling back to
+/// `palette.primary_material` when missing.
+///
+/// Joints are then spawned with their anchors and a `local_basis2` set to the
+/// child's rest-pose relative rotation so the solver preserves the intended
+/// orientation between modules. Returns the spawned entities so callers can
+/// parent them under a root, tag them, or wire up motor control systems.
 pub fn spawn_robot(
     commands: &mut Commands,
     blueprint: &RobotBlueprint,

@@ -1,7 +1,7 @@
 //! Egui UI helpers for L-System material editing.
 //!
-//! Provides reusable widgets for editing [`MaterialSettingsMap`] entries,
-//! allowing any application with `bevy_egui` to embed material palette controls.
+//! Provides reusable widgets for editing [`crate::materials::MaterialSettingsMap`]
+//! entries, allowing any application with `bevy_egui` to embed material palette controls.
 //!
 //! Texture-specific config editors for **all 23 procedural texture variants**
 //! (Leaf, Twig, Bark, Window, StainedGlass, IronGrille, Ground, Rock, Brick,
@@ -68,7 +68,7 @@ pub fn material_palette_editor(
         let mut local_texture = current.texture.clone();
         let mut local_uv_scale = current.uv_scale;
 
-        // mat_regen: triggers texture regeneration (set_changed for sync_material_properties)
+        // mat_regen: caller should fire MaterialSettingsChanged so on_material_settings_changed re-applies the palette
         // mat_writeback: slider value changed visually but regen not yet needed (prevents snap-back)
         let mut mat_regen = false;
         let mut mat_writeback = false;
