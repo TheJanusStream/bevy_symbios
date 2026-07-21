@@ -87,15 +87,15 @@ fn test_zero_length_segment_collapse() {
     let meshes = builder.build(&s);
 
     // If logic filters duplicates, this might result in empty mesh map or empty mesh
-    if let Some(mesh) = meshes.get(&0) {
-        if let Some(normals) = mesh.attribute(Mesh::ATTRIBUTE_NORMAL) {
-            let norms = normals.as_float3().unwrap();
-            for n in norms {
-                assert!(
-                    !n[0].is_nan(),
-                    "NaN normal generated from zero-length segment"
-                );
-            }
+    if let Some(mesh) = meshes.get(&0)
+        && let Some(normals) = mesh.attribute(Mesh::ATTRIBUTE_NORMAL)
+    {
+        let norms = normals.as_float3().unwrap();
+        for n in norms {
+            assert!(
+                !n[0].is_nan(),
+                "NaN normal generated from zero-length segment"
+            );
         }
     }
 }
