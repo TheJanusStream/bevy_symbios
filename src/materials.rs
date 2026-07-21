@@ -22,30 +22,7 @@ use bevy::prelude::*;
 use bevy::render::render_resource::{Extent3d, Face, TextureDimension, TextureFormat};
 use bevy::tasks::{AsyncComputeTaskPool, Task, block_on, futures_lite::future};
 use bevy_symbios_texture::TextureConfig;
-use bevy_symbios_texture::ashlar::AshlarGenerator;
-use bevy_symbios_texture::asphalt::AsphaltGenerator;
-use bevy_symbios_texture::bark::{BarkConfig, BarkGenerator};
-use bevy_symbios_texture::brick::BrickGenerator;
-use bevy_symbios_texture::cobblestone::CobblestoneGenerator;
-use bevy_symbios_texture::concrete::ConcreteGenerator;
-use bevy_symbios_texture::corrugated::CorrugatedGenerator;
-use bevy_symbios_texture::encaustic::EncausticGenerator;
-use bevy_symbios_texture::generator::{TextureError, TextureGenerator, TextureMap};
-use bevy_symbios_texture::ground::GroundGenerator;
-use bevy_symbios_texture::iron_grille::IronGrilleGenerator;
-use bevy_symbios_texture::leaf::{LeafConfig, LeafGenerator};
-use bevy_symbios_texture::marble::MarbleGenerator;
-use bevy_symbios_texture::metal::MetalGenerator;
-use bevy_symbios_texture::pavers::PaversGenerator;
-use bevy_symbios_texture::plank::PlankGenerator;
-use bevy_symbios_texture::rock::RockGenerator;
-use bevy_symbios_texture::shingle::ShingleGenerator;
-use bevy_symbios_texture::stained_glass::StainedGlassGenerator;
-use bevy_symbios_texture::stucco::StuccoGenerator;
-use bevy_symbios_texture::thatch::ThatchGenerator;
-use bevy_symbios_texture::twig::{TwigConfig, TwigGenerator};
-use bevy_symbios_texture::wainscoting::WainscotingGenerator;
-use bevy_symbios_texture::window::WindowGenerator;
+use bevy_symbios_texture::generator::{TextureError, TextureMap};
 use bevy_symbios_texture::{GeneratedHandles, map_to_images, map_to_images_card};
 
 pub use bevy_symbios_texture::TextureConfig as ProceduralTextureConfig;
@@ -72,11 +49,10 @@ pub enum TextureType {
     Grid,
     Noise,
     Checker,
-    /// Procedural generator from `bevy_symbios_texture` (Leaf, Twig, Bark,
-    /// Window, StainedGlass, IronGrille, Ground, Rock, Brick, Plank, Shingle,
-    /// Stucco, Concrete, Metal, Pavers, Ashlar, Cobblestone, Thatch, Marble,
-    /// Corrugated, Asphalt, Wainscoting, Encaustic). The active config is
-    /// stored inline.
+    /// Procedural generator from `bevy_symbios_texture` — any variant of its
+    /// registry-driven [`TextureConfig`] enum (surfaces like Bark, Brick,
+    /// Sand, Ice, Lava, Moss; cards like Leaf, Twig, Flower, Flame, Snowflake).
+    /// The active config is stored inline.
     Procedural(TextureConfig),
 }
 
@@ -95,53 +71,11 @@ impl TextureType {
     }
 
     /// Default-constructed `TextureConfig` for every generator variant —
-    /// excludes `TextureConfig::None`.
+    /// excludes `TextureConfig::None`. Delegates to
+    /// [`TextureConfig::all_defaults`], so generators added upstream appear
+    /// here (and in UI dropdowns) automatically.
     pub fn all_procedural_kinds() -> Vec<TextureConfig> {
-        use bevy_symbios_texture::ashlar::AshlarConfig;
-        use bevy_symbios_texture::asphalt::AsphaltConfig;
-        use bevy_symbios_texture::brick::BrickConfig;
-        use bevy_symbios_texture::cobblestone::CobblestoneConfig;
-        use bevy_symbios_texture::concrete::ConcreteConfig;
-        use bevy_symbios_texture::corrugated::CorrugatedConfig;
-        use bevy_symbios_texture::encaustic::EncausticConfig;
-        use bevy_symbios_texture::ground::GroundConfig;
-        use bevy_symbios_texture::iron_grille::IronGrilleConfig;
-        use bevy_symbios_texture::marble::MarbleConfig;
-        use bevy_symbios_texture::metal::MetalConfig;
-        use bevy_symbios_texture::pavers::PaversConfig;
-        use bevy_symbios_texture::plank::PlankConfig;
-        use bevy_symbios_texture::rock::RockConfig;
-        use bevy_symbios_texture::shingle::ShingleConfig;
-        use bevy_symbios_texture::stained_glass::StainedGlassConfig;
-        use bevy_symbios_texture::stucco::StuccoConfig;
-        use bevy_symbios_texture::thatch::ThatchConfig;
-        use bevy_symbios_texture::wainscoting::WainscotingConfig;
-        use bevy_symbios_texture::window::WindowConfig;
-        vec![
-            TextureConfig::Leaf(LeafConfig::default()),
-            TextureConfig::Twig(TwigConfig::default()),
-            TextureConfig::Bark(BarkConfig::default()),
-            TextureConfig::Window(WindowConfig::default()),
-            TextureConfig::StainedGlass(StainedGlassConfig::default()),
-            TextureConfig::IronGrille(IronGrilleConfig::default()),
-            TextureConfig::Ground(GroundConfig::default()),
-            TextureConfig::Rock(RockConfig::default()),
-            TextureConfig::Brick(BrickConfig::default()),
-            TextureConfig::Plank(PlankConfig::default()),
-            TextureConfig::Shingle(ShingleConfig::default()),
-            TextureConfig::Stucco(StuccoConfig::default()),
-            TextureConfig::Concrete(ConcreteConfig::default()),
-            TextureConfig::Metal(MetalConfig::default()),
-            TextureConfig::Pavers(PaversConfig::default()),
-            TextureConfig::Ashlar(AshlarConfig::default()),
-            TextureConfig::Cobblestone(CobblestoneConfig::default()),
-            TextureConfig::Thatch(ThatchConfig::default()),
-            TextureConfig::Marble(MarbleConfig::default()),
-            TextureConfig::Corrugated(CorrugatedConfig::default()),
-            TextureConfig::Asphalt(AsphaltConfig::default()),
-            TextureConfig::Wainscoting(WainscotingConfig::default()),
-            TextureConfig::Encaustic(EncausticConfig::default()),
-        ]
+        TextureConfig::all_defaults()
     }
 
     /// Stable identifier used for variant comparison; cheap to compare without
@@ -550,39 +484,14 @@ fn spawn_generator_task(
     pool: &AsyncComputeTaskPool,
     cfg: &TextureConfig,
 ) -> Option<Task<Result<TextureMap, TextureError>>> {
-    macro_rules! gen_task {
-        ($Generator:ident, $cfg:expr) => {{
-            let cfg = $cfg.clone();
-            pool.spawn(async move { $Generator::new(cfg).generate(512, 512) })
-        }};
+    if matches!(cfg, TextureConfig::None) {
+        return None;
     }
-    let task = match cfg {
-        TextureConfig::None => return None,
-        TextureConfig::Leaf(c) => gen_task!(LeafGenerator, c),
-        TextureConfig::Twig(c) => gen_task!(TwigGenerator, c),
-        TextureConfig::Bark(c) => gen_task!(BarkGenerator, c),
-        TextureConfig::Window(c) => gen_task!(WindowGenerator, c),
-        TextureConfig::StainedGlass(c) => gen_task!(StainedGlassGenerator, c),
-        TextureConfig::IronGrille(c) => gen_task!(IronGrilleGenerator, c),
-        TextureConfig::Ground(c) => gen_task!(GroundGenerator, c),
-        TextureConfig::Rock(c) => gen_task!(RockGenerator, c),
-        TextureConfig::Brick(c) => gen_task!(BrickGenerator, c),
-        TextureConfig::Plank(c) => gen_task!(PlankGenerator, c),
-        TextureConfig::Shingle(c) => gen_task!(ShingleGenerator, c),
-        TextureConfig::Stucco(c) => gen_task!(StuccoGenerator, c),
-        TextureConfig::Concrete(c) => gen_task!(ConcreteGenerator, c),
-        TextureConfig::Metal(c) => gen_task!(MetalGenerator, c),
-        TextureConfig::Pavers(c) => gen_task!(PaversGenerator, c),
-        TextureConfig::Ashlar(c) => gen_task!(AshlarGenerator, c),
-        TextureConfig::Cobblestone(c) => gen_task!(CobblestoneGenerator, c),
-        TextureConfig::Thatch(c) => gen_task!(ThatchGenerator, c),
-        TextureConfig::Marble(c) => gen_task!(MarbleGenerator, c),
-        TextureConfig::Corrugated(c) => gen_task!(CorrugatedGenerator, c),
-        TextureConfig::Asphalt(c) => gen_task!(AsphaltGenerator, c),
-        TextureConfig::Wainscoting(c) => gen_task!(WainscotingGenerator, c),
-        TextureConfig::Encaustic(c) => gen_task!(EncausticGenerator, c),
-    };
-    Some(task)
+    let cfg = cfg.clone();
+    Some(pool.spawn(async move {
+        cfg.generate_sync(512, 512)
+            .expect("TextureConfig::None handled above")
+    }))
 }
 
 /// Update system that polls completed foliage texture tasks and applies the

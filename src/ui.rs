@@ -3,13 +3,13 @@
 //! Provides reusable widgets for editing [`crate::materials::MaterialSettingsMap`]
 //! entries, allowing any application with `bevy_egui` to embed material palette controls.
 //!
-//! Texture-specific config editors for **all 23 procedural texture variants**
-//! (Leaf, Twig, Bark, Window, StainedGlass, IronGrille, Ground, Rock, Brick,
-//! Plank, Shingle, Stucco, Concrete, Metal, Pavers, Ashlar, Cobblestone,
-//! Thatch, Marble, Corrugated, Asphalt, Wainscoting, Encaustic) are
-//! re-exported from [`bevy_symbios_texture::ui`] and dispatched live by
-//! [`material_palette_editor`] under a collapsible "Texture parameters"
-//! subsection per material slot.
+//! Texture-specific config editors for **every procedural texture variant**
+//! in the `bevy_symbios_texture` registry are re-exported from
+//! [`bevy_symbios_texture::ui`] and dispatched live by
+//! [`material_palette_editor`] (via [`texture_config_editor`]) under a
+//! collapsible "Texture parameters" subsection per material slot. Generators
+//! added upstream are picked up automatically — the dispatch is exhaustive
+//! in the texture crate itself.
 
 use bevy::platform::collections::HashMap;
 use bevy_egui::egui;
@@ -17,23 +17,15 @@ use bevy_symbios_texture::TextureConfig;
 
 use crate::materials::{MaterialSettings, TextureType};
 
-pub use bevy_symbios_texture::ui::{
-    ashlar_config_editor, asphalt_config_editor, bark_config_editor, brick_config_editor,
-    cobblestone_config_editor, concrete_config_editor, corrugated_config_editor,
-    encaustic_config_editor, ground_config_editor, iron_grille_config_editor, leaf_config_editor,
-    marble_config_editor, metal_config_editor, pavers_config_editor, plank_config_editor,
-    rock_config_editor, shingle_config_editor, slider_debounced, stained_glass_config_editor,
-    stucco_config_editor, thatch_config_editor, twig_config_editor, wainscoting_config_editor,
-    window_config_editor,
-};
+pub use bevy_symbios_texture::ui::*;
 
 /// Renders a material palette editor widget.
 ///
 /// Shows a collapsible section per material ID with controls for base color,
 /// emission, roughness, metallic, texture type, UV scale, and — for any
 /// `Procedural(TextureConfig)` selection — a nested **"Texture parameters"**
-/// subsection wrapping the per-variant editor for the active config (one of
-/// the 23 generators in [`bevy_symbios_texture`]). The nested collapsible
+/// subsection wrapping the per-variant editor for the active config (any
+/// generator in the [`bevy_symbios_texture`] registry). The nested collapsible
 /// keeps PBR sliders visually separate from the (sometimes lengthy)
 /// generator-specific sliders.
 ///
@@ -113,9 +105,10 @@ pub fn material_palette_editor(
                     });
             });
 
-            // Per-variant config editor from bevy_symbios_texture::ui, wrapped
-            // in its own collapsible subsection so the (sometimes 10+) sliders
-            // for a brick or thatch generator do not crowd the PBR controls.
+            // Per-variant config editor dispatched by
+            // bevy_symbios_texture::ui::texture_config_editor, wrapped in its
+            // own collapsible subsection so the (sometimes 10+) sliders for a
+            // brick or thatch generator do not crowd the PBR controls.
             // Editors return (writeback, regen): writeback is true during drag
             // (prevents snap-back), regen is true only when the drag commits
             // (drag_stopped or non-drag change).
@@ -128,33 +121,7 @@ pub fn material_palette_editor(
             {
                 let id = egui::Id::new(mat_id);
                 ui.collapsing(header, |ui| {
-                    let (wb, regen) = match cfg {
-                        // None is matched by the outer `!matches!(...)` guard.
-                        TextureConfig::None => (false, false),
-                        TextureConfig::Leaf(c) => leaf_config_editor(ui, c, id),
-                        TextureConfig::Twig(c) => twig_config_editor(ui, c, id),
-                        TextureConfig::Bark(c) => bark_config_editor(ui, c, id),
-                        TextureConfig::Window(c) => window_config_editor(ui, c, id),
-                        TextureConfig::StainedGlass(c) => stained_glass_config_editor(ui, c, id),
-                        TextureConfig::IronGrille(c) => iron_grille_config_editor(ui, c, id),
-                        TextureConfig::Ground(c) => ground_config_editor(ui, c, id),
-                        TextureConfig::Rock(c) => rock_config_editor(ui, c, id),
-                        TextureConfig::Brick(c) => brick_config_editor(ui, c, id),
-                        TextureConfig::Plank(c) => plank_config_editor(ui, c, id),
-                        TextureConfig::Shingle(c) => shingle_config_editor(ui, c, id),
-                        TextureConfig::Stucco(c) => stucco_config_editor(ui, c, id),
-                        TextureConfig::Concrete(c) => concrete_config_editor(ui, c, id),
-                        TextureConfig::Metal(c) => metal_config_editor(ui, c, id),
-                        TextureConfig::Pavers(c) => pavers_config_editor(ui, c, id),
-                        TextureConfig::Ashlar(c) => ashlar_config_editor(ui, c, id),
-                        TextureConfig::Cobblestone(c) => cobblestone_config_editor(ui, c, id),
-                        TextureConfig::Thatch(c) => thatch_config_editor(ui, c, id),
-                        TextureConfig::Marble(c) => marble_config_editor(ui, c, id),
-                        TextureConfig::Corrugated(c) => corrugated_config_editor(ui, c, id),
-                        TextureConfig::Asphalt(c) => asphalt_config_editor(ui, c, id),
-                        TextureConfig::Wainscoting(c) => wainscoting_config_editor(ui, c, id),
-                        TextureConfig::Encaustic(c) => encaustic_config_editor(ui, c, id),
-                    };
+                    let (wb, regen) = texture_config_editor(ui, cfg, id);
                     mat_writeback |= wb;
                     mat_regen |= regen;
                 });
