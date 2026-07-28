@@ -24,7 +24,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-bevy_symbios = "0.6"
+bevy_symbios = "0.7"
 ```
 
 Feature flags:
@@ -38,7 +38,7 @@ Feature flags:
 
 ```toml
 [dependencies]
-bevy_symbios = { version = "0.6", features = ["physics", "egui", "asset-loader"] }
+bevy_symbios = { version = "0.7", features = ["physics", "egui", "asset-loader"] }
 ```
 
 ## Usage
@@ -189,7 +189,7 @@ resulting handles to the `MaterialPalette`.
 ### Material Palette Editor (requires `egui` feature)
 
 ```toml
-bevy_symbios = { version = "0.6", features = ["egui"] }
+bevy_symbios = { version = "0.7", features = ["egui"] }
 ```
 
 ```rust
