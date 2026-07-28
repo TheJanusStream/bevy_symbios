@@ -10,24 +10,61 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
+  # Formatting needs no system libraries and no feature resolution, so it runs
+  # as its own fast job rather than repeating once per matrix entry.
+  fmt:
+    name: Formatting
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
+      - run: cargo fmt -- --check
+
+  # Every optional feature gets its own entry. `serde_json` shipping only under
+  # `asset-loader` (#34) went unnoticed because CI built a single feature set —
+  # code behind `egui`, `robot` and `asset-loader` was never compiled here.
+  test:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    strategy:
+      # Report every broken combination in one run instead of stopping at the
+      # first failure.
+      fail-fast: false
+      matrix:
+        include:
+          - name: default (no features)
+            flags: ""
+          - name: physics
+            flags: "--features physics"
+          - name: egui
+            flags: "--features egui"
+          - name: robot
+            flags: "--features robot"
+          - name: asset-loader
+            flags: "--features asset-loader"
+          - name: all features
+            flags: "--all-features"
+    steps:
+      - uses: actions/checkout@v4
 
       - name: Install Linux Dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y g++ pkg-config libx11-dev libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev
 
-      - name: Check Formatting
-        run: cargo fmt -- --check
+      # Bevy is expensive to build from scratch; without this each matrix entry
+      # pays the full compile cost.
+      - name: Cache cargo registry and target dir
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.name }}
 
+      # `--all-targets` covers tests, examples and benches — the lib-only lint
+      # this replaces missed warnings in the test suite entirely.
       - name: Clippy (Linting)
-        run: cargo clippy -- -D warnings
+        run: cargo clippy ${{ matrix.flags }} --all-targets -- -D warnings
 
       - name: Build
-        run: cargo build --verbose
+        run: cargo build --verbose ${{ matrix.flags }}
 
       - name: Run Tests
-        run: cargo test --verbose --features physics
+        run: cargo test --verbose ${{ matrix.flags }}
