@@ -189,7 +189,7 @@ resulting handles to the `MaterialPalette`.
 ### Material Palette Editor (requires `egui` feature)
 
 ```toml
-bevy_symbios = { version = "0.5", features = ["egui"] }
+bevy_symbios = { version = "0.6", features = ["egui"] }
 ```
 
 ```rust
