@@ -11,7 +11,7 @@ Converts L-System skeletons into Bevy meshes and physics colliders for procedura
 - **Vertex Colors**: Per-vertex RGBA colors from skeleton data
 - **UV Mapping**: Arc-length parameterized UVs with aspect-ratio preservation
 - **Mesh Caching**: Optional fingerprint-keyed `MeshCache` to avoid re-meshing identical L-systems
-- **Procedural Materials**: 48 procedural texture generators (Leaf, Twig, Bark, Brick, Sand, Ice, Lava, Flower, Flame, …) plus Grid/Noise/Checker previews
+- **Procedural Materials**: 57 procedural texture generators (Leaf, Twig, Bark, Brick, Sand, Ice, Lava, Flower, Flame, …) plus Grid/Noise/Checker previews
 - **OBJ + GLB Export**: Pure data conversion for tooling / asset pipelines
 - **Egui Editor** (optional): Drop-in `material_palette_editor` widget for live PBR + per-texture-config editing
 - **Physics Colliders** (optional): Compound capsule colliders for Avian3D physics
@@ -24,7 +24,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-bevy_symbios = "0.5"
+bevy_symbios = "0.6"
 ```
 
 Feature flags:
@@ -38,7 +38,7 @@ Feature flags:
 
 ```toml
 [dependencies]
-bevy_symbios = { version = "0.5", features = ["physics", "egui", "asset-loader"] }
+bevy_symbios = { version = "0.6", features = ["physics", "egui", "asset-loader"] }
 ```
 
 ## Usage
@@ -201,11 +201,13 @@ let regen = material_palette_editor(ui, &mut material_settings.settings);
 ```
 
 The editor exposes PBR sliders plus a **Texture parameters** subsection that dispatches
-to the per-variant editor for every `bevy_symbios_texture` generator — 48 as of 0.7,
-spanning architectural surfaces (Brick, Plank, Ashlar, Wainscoting, …), natural
-surfaces (Bark, Ground, Sand, Snow, Ice, Lava, Moss, Lichen, CactusSkin, …), and
-alpha-masked foliage/particle cards (Leaf, Twig, Flower, GrassTuft, Frond, Flame,
-Spark, Snowflake, …). New upstream generators appear in the dropdown automatically.
+to the per-variant editor for every `bevy_symbios_texture` generator — 57 as of 0.8,
+spanning architectural surfaces (Brick, Plank, Ashlar, Wainscoting, Parquet, Truchet,
+SolarPanel, …), natural surfaces (Bark, Ground, Sand, Snow, Ice, Lava, Moss, Lichen,
+CactusSkin, CrackedEarth, Gravel, ForestFloor, Obsidian, …), and alpha-masked
+foliage/particle cards (Leaf, Twig, Flower, GrassTuft, Frond, Reed, Needle, Broadleaf,
+Flame, Spark, Snowflake, …). New upstream generators appear in the dropdown
+automatically.
 
 ### Mesh Caching
 

@@ -99,3 +99,62 @@ fn observer_does_not_run_without_trigger() {
         "Without an explicit trigger the observer must not run"
     );
 }
+
+/// `TextureType` and `TextureConfig` are both `$type`-tagged. Adjacent tagging
+/// on the outer enum keeps the inner config in its own map — internal tagging
+/// spliced the two together and emitted `$type` twice, which serde then refused
+/// to read back with `duplicate field $type`.
+#[test]
+fn procedural_texture_type_round_trips() {
+    let bark = TextureType::all_procedural_kinds()
+        .into_iter()
+        .find(|c| c.label() == "Bark")
+        .expect("Bark is a registered generator");
+    let value = TextureType::procedural(bark);
+
+    let json = serde_json::to_string(&value).unwrap();
+    assert_eq!(
+        json.matches(r#""$type""#).count(),
+        2,
+        "one tag for the outer variant, one for the inner config: {json}"
+    );
+    assert!(
+        json.starts_with(r#"{"$type":"Procedural","config":{"$type":"Bark""#),
+        "unexpected shape: {json}"
+    );
+
+    let round_tripped: TextureType = serde_json::from_str(&json).unwrap();
+    assert_eq!(round_tripped.kind(), "Bark");
+    assert_eq!(serde_json::to_string(&round_tripped).unwrap(), json);
+}
+
+/// The round-trip must survive the whole `MaterialSettings` struct, since that
+/// is what `.matpalette.json` actually stores.
+#[test]
+fn material_settings_with_procedural_texture_round_trips() {
+    let leaf = TextureType::all_procedural_kinds()
+        .into_iter()
+        .find(|c| c.label() == "Leaf")
+        .expect("Leaf is a registered generator");
+    let settings = MaterialSettings {
+        base_color: [0.2, 0.8, 0.2],
+        texture: TextureType::procedural(leaf),
+        ..default()
+    };
+
+    let json = serde_json::to_string(&settings).unwrap();
+    let back: MaterialSettings = serde_json::from_str(&json).unwrap();
+    assert_eq!(back.texture.kind(), "Leaf");
+    assert!(back.texture.is_foliage_card());
+    assert_eq!(back.base_color, [0.2, 0.8, 0.2]);
+}
+
+#[test]
+fn payload_free_texture_types_still_serialise_as_bare_tags() {
+    assert_eq!(
+        serde_json::to_string(&TextureType::None).unwrap(),
+        r#"{"$type":"None"}"#
+    );
+    let grid: TextureType = serde_json::from_str(r#"{"$type":"Grid"}"#).unwrap();
+    assert_eq!(grid.kind(), "Grid");
+}

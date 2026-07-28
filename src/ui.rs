@@ -117,7 +117,7 @@ pub fn material_palette_editor(
             // taken — `name()` would otherwise alias the inner mutable borrow.
             let header = format!("Texture parameters ({})", local_texture.name());
             if let TextureType::Procedural(cfg) = &mut local_texture
-                && !matches!(cfg, TextureConfig::None)
+                && !matches!(**cfg, TextureConfig::None)
             {
                 let id = egui::Id::new(mat_id);
                 ui.collapsing(header, |ui| {

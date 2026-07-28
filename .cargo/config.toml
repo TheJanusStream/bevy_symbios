@@ -1,0 +1,4 @@
+# Cap parallel build jobs so `cargo test` doesn't link
+# all integration-test binaries at once.
+[build]
+jobs = 6

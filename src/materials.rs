@@ -38,11 +38,23 @@ pub use bevy_symbios_texture::twig::TwigConfig as TwigTexConfig;
 /// variant. The `Procedural` variant carries the active config inline so a
 /// single `MaterialSettings.texture` field captures the full state.
 ///
-/// `serde(tag = "$type")` keeps existing JSON palettes parseable: payload-less
-/// variants serialise as `{"$type":"None"}`, and `Procedural` writes the inner
-/// `TextureConfig` (which itself is `serde(tag = "$type")`).
+/// # Serialised form
+///
+/// `serde(tag = "$type", content = "config")` keeps existing JSON palettes
+/// parseable — payload-less variants still serialise as `{"$type":"None"}` —
+/// while nesting the `Procedural` payload under a `config` key:
+/// `{"$type":"Procedural","config":{"$type":"Bark",…}}`.
+///
+/// The nesting is required, not cosmetic. `TextureConfig` is itself
+/// `serde(tag = "$type")`, so an *internally* tagged `Procedural` would splice
+/// the inner config's fields into the outer map and emit `$type` twice — the
+/// value would serialise to invalid-by-intent JSON and fail to deserialise with
+/// `duplicate field $type`. Adjacent tagging gives the inner enum its own map.
+///
+/// The `Box` around the payload is transparent to serde and does not affect the
+/// format.
 #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
-#[serde(tag = "$type")]
+#[serde(tag = "$type", content = "config")]
 pub enum TextureType {
     #[default]
     None,
@@ -52,11 +64,19 @@ pub enum TextureType {
     /// Procedural generator from `bevy_symbios_texture` — any variant of its
     /// registry-driven [`TextureConfig`] enum (surfaces like Bark, Brick,
     /// Sand, Ice, Lava, Moss; cards like Leaf, Twig, Flower, Flame, Snowflake).
-    /// The active config is stored inline.
-    Procedural(TextureConfig),
+    /// The active config is boxed: `TextureConfig` is ~320 bytes while every
+    /// other variant is payload-free, so storing it inline would bloat every
+    /// `MaterialSettings` by the same amount.
+    Procedural(Box<TextureConfig>),
 }
 
 impl TextureType {
+    /// Convenience constructor for [`Procedural`](Self::Procedural) that boxes
+    /// the config for you.
+    pub fn procedural(config: TextureConfig) -> Self {
+        Self::Procedural(Box::new(config))
+    }
+
     /// All variants in their default-constructed form, suitable for populating
     /// a UI dropdown. The order is: built-in previews first, then every
     /// `bevy_symbios_texture` generator.
@@ -65,7 +85,7 @@ impl TextureType {
         v.extend(
             Self::all_procedural_kinds()
                 .into_iter()
-                .map(Self::Procedural),
+                .map(Self::procedural),
         );
         v
     }
