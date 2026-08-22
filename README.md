@@ -18,15 +18,6 @@ Converts L-System skeletons into Bevy meshes and physics colliders for procedura
 - **Robot Spawning** (optional): Spawn articulated rigid-body robots from `symbios-robot` blueprints
 - **Asset Loaders** (optional): `.lsys` grammars and `.matpalette.json` palettes loaded through `AssetServer` (hot-reload friendly)
 
-## Installation
-
-Add to your `Cargo.toml`:
-
-```toml
-[dependencies]
-bevy_symbios = "0.7"
-```
-
 Feature flags:
 
 | Feature         | Implies   | Enables                                                     |
@@ -35,11 +26,6 @@ Feature flags:
 | `egui`          |           | `ui::material_palette_editor` (via `bevy_egui`)             |
 | `robot`         | `physics` | `spawn_robot`, `SpawnedRobot`, `ImuSensor`, `TouchSensor`   |
 | `asset-loader`  |           | `LSystemAssetPlugin`, `.lsys` + `.matpalette.json` loaders  |
-
-```toml
-[dependencies]
-bevy_symbios = { version = "0.7", features = ["physics", "egui", "asset-loader"] }
-```
 
 ## Usage
 
@@ -187,10 +173,6 @@ generation task; `apply_foliage_textures` drains those tasks each frame and appl
 resulting handles to the `MaterialPalette`.
 
 ### Material Palette Editor (requires `egui` feature)
-
-```toml
-bevy_symbios = { version = "0.7", features = ["egui"] }
-```
 
 ```rust
 use bevy_symbios::ui::material_palette_editor;

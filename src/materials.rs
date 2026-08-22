@@ -434,7 +434,7 @@ pub fn on_material_settings_changed(
             .entry(*mat_id)
             .or_insert_with(|| materials.add(StandardMaterial::default()))
             .clone();
-        let Some(mat) = materials.get_mut(&handle) else {
+        let Some(mut mat) = materials.get_mut(&handle) else {
             continue;
         };
 
@@ -562,7 +562,7 @@ pub fn apply_foliage_textures(
         let Some(mat_handle) = palette.bypass_change_detection().materials.get(&mat_id) else {
             continue;
         };
-        let Some(mat) = materials.get_mut(mat_handle) else {
+        let Some(mut mat) = materials.get_mut(mat_handle) else {
             continue;
         };
 
