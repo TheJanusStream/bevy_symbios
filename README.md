@@ -10,7 +10,7 @@ Converts L-System skeletons into Bevy meshes and physics colliders for procedura
 - **Multi-Material Support**: Separate meshes per `u16` material ID for palette-driven PBR (bark, leaves, etc.)
 - **Vertex Colors**: Per-vertex RGBA colors from skeleton data
 - **UV Mapping**: Arc-length parameterized UVs with aspect-ratio preservation
-- **Mesh Caching**: Optional fingerprint-keyed `MeshCache` to avoid re-meshing identical L-systems
+- **Mesh Caching**: Optional fingerprint-keyed, LRU-bounded `MeshCache` to avoid re-meshing identical L-systems
 - **Procedural Materials**: 57 procedural texture generators (Leaf, Twig, Bark, Brick, Sand, Ice, Lava, Flower, Flame, …) plus Grid/Noise/Checker previews
 - **OBJ + GLB Export**: Pure data conversion for tooling / asset pipelines
 - **Egui Editor** (optional): Drop-in `material_palette_editor` widget for live PBR + per-texture-config editing
@@ -225,8 +225,17 @@ IDs, UV scales) plus the builder's resolution. A matching fingerprint returns th
 `Handle<Mesh>` map; otherwise it builds, inserts, and bumps the miss counter. Inspect
 `cache.hits()` / `cache.misses()` for instrumentation, or use the lower-level
 `MeshCache::get_or_insert_with` with `compute_skeleton_fingerprint` if you need to drive
-caching outside `build_cached`. The cache does not LRU-evict — call `clear()`
-periodically in long-running scenes that generate many unique skeletons.
+caching outside `build_cached`.
+
+The cache is **bounded**: at `DEFAULT_MESH_CACHE_CAPACITY` (8192) entries the
+least-recently-used ones are evicted, so a long-running session that keeps generating
+unique skeletons cannot grow it without limit — which matters most on wasm, where a heap
+that grows is never handed back. Evicting only means an identical skeleton later
+re-meshes; it does not free a GPU mesh an entity still references. Use
+`MeshCache::with_capacity(n)` for a different ceiling, `set_capacity(None)` or
+`MeshCache::unbounded()` for the pre-0.8.2 unbounded behaviour, `clear()` to drop
+everything between scene changes, and `evictions()` to tell a working set that outgrew
+its ceiling from one that fits.
 
 ### Robot Spawning (requires `robot` feature)
 
@@ -328,12 +337,15 @@ included in the GLB output.
 
 | Method / Free fn                             | Description                                                                    |
 |----------------------------------------------|--------------------------------------------------------------------------------|
-| `new()` / `default()`                        | Empty cache                                                                    |
+| `new()` / `default()`                        | Empty cache bounded at `DEFAULT_MESH_CACHE_CAPACITY` (8192)                    |
+| `with_capacity(n)` / `unbounded()`           | Empty cache with an explicit ceiling, or with eviction disabled                |
+| `capacity()` / `set_capacity(opt)`           | Read the ceiling; set it (`None` disables eviction, evicts immediately)        |
 | `len()` / `is_empty()`                       | Entry count                                                                    |
-| `contains(&skeleton, resolution)`            | Probe a fingerprint without bumping counters                                   |
-| `hits()` / `misses()` / `reset_stats()`      | Cumulative counters since construction or last reset                           |
+| `contains(&skeleton, resolution)`            | Probe a fingerprint without bumping counters or recency                        |
+| `hits()` / `misses()` / `evictions()`        | Cumulative counters since construction or last reset                           |
+| `reset_stats()`                              | Zero the counters, keeping the entries                                         |
 | `clear()`                                    | Drop all cached entries (counters preserved)                                   |
-| `get_or_insert_with(fingerprint, build)`     | Lookup-or-build by explicit fingerprint                                        |
+| `get_or_insert_with(fingerprint, build)`     | Lookup-or-build by explicit fingerprint; refreshes LRU recency                 |
 | `compute_skeleton_fingerprint(&skel, res)`   | Free function — derive the same fingerprint `build_cached` uses                |
 
 ### `ColliderGenerator` (requires `physics` feature)

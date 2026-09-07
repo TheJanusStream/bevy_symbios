@@ -317,6 +317,14 @@ impl LSystemMeshBuilder {
 // Mesh cache
 // ---------------------------------------------------------------------------
 
+/// Default entry ceiling for [`MeshCache`].
+///
+/// Matches `bevy_symbios_shape::DEFAULT_MESH_CACHE_CAPACITY`: sized so a dense
+/// scene (thousands of distinct skeletons) still runs almost entirely on cache
+/// hits, while a long-lived session that keeps re-rolling grammars cannot grow
+/// the map without bound.
+pub const DEFAULT_MESH_CACHE_CAPACITY: usize = 8192;
+
 /// Resource that maps a skeleton fingerprint to its built per-material [`Mesh`]
 /// handles, enabling re-spawn of identical L-systems without re-meshing.
 ///
@@ -325,37 +333,103 @@ impl LSystemMeshBuilder {
 /// Auto-invalidation: each call to [`LSystemMeshBuilder::build_cached`]
 /// recomputes a fingerprint over the skeleton's strands (positions, rotations,
 /// radii, colors, material IDs, UV scales) plus the builder's resolution. If
-/// any of those change, the fingerprint changes and a fresh mesh is built. The
-/// previous entry remains in the cache until [`MeshCache::clear`] is called —
-/// the cache does not LRU-evict on its own.
+/// any of those change, the fingerprint changes and a fresh mesh is built.
+///
+/// # Bounding
+///
+/// The map is **bounded**: once it holds [`capacity`] entries, the
+/// least-recently-used ones are evicted to make room (see
+/// [`DEFAULT_MESH_CACHE_CAPACITY`]). Evicting an entry does not free the GPU
+/// meshes while entities still reference them — it only means an identical
+/// skeleton later re-meshes and re-uploads. A session that keeps re-rolling
+/// grammars therefore cannot grow the cache without limit, which matters most
+/// on wasm, where a heap that grows is never handed back.
+///
+/// Call [`MeshCache::unbounded`] for the pre-0.8.2 behaviour, or
+/// [`MeshCache::clear`] to drop everything between large scene changes.
 ///
 /// # Parity with `bevy_symbios_shape::ShapeMeshCache`
 ///
 /// This cache deliberately mirrors the API surface of
 /// `bevy_symbios_shape::ShapeMeshCache` so that downstream apps can wire
 /// procedural-mesh observability uniformly across both pipelines. Both expose
-/// `get_or_insert_with`, `len`, `is_empty`, `clear`, and `hits` / `misses` /
-/// `reset_stats` cumulative counters. The two caches stay separate types
-/// (different keys, different value shapes — opaque skeleton fingerprint →
-/// `HashMap<material_id, Handle<Mesh>>` here vs. structured terminal key →
-/// single `Handle<Mesh>` there), but the operational vocabulary is shared.
+/// `get_or_insert_with`, `with_capacity` / `unbounded` / `capacity` /
+/// `set_capacity`, `len`, `is_empty`, `clear`, and `hits` / `misses` /
+/// `evictions` / `reset_stats` cumulative counters. The two caches stay
+/// separate types (different keys, different value shapes — opaque skeleton
+/// fingerprint → `HashMap<material_id, Handle<Mesh>>` here vs. structured
+/// terminal key → single `Handle<Mesh>` there), but the operational vocabulary
+/// is shared.
 ///
 /// # Trade-off
 ///
 /// Caching trades memory for CPU. Each cached entry keeps its [`Mesh`] assets
-/// alive (the [`Handle`]s live in the cache). For long-running scenes that
-/// generate many unique skeletons, call [`MeshCache::clear`] periodically to
-/// release them, or manage a coarser eviction policy at the application layer.
-#[derive(Resource, Default, Debug)]
+/// alive (the [`Handle`]s live in the cache), so the ceiling is what bounds
+/// that memory; raise it for a scene with a large working set and accept the
+/// residency, or lower it and accept the re-mesh churn [`evictions`] reports.
+///
+/// [`capacity`]: MeshCache::capacity
+/// [`evictions`]: MeshCache::evictions
+#[derive(Resource, Debug)]
 pub struct MeshCache {
-    entries: HashMap<u64, HashMap<u16, Handle<Mesh>>>,
+    /// `(handles, last_used_tick)` — the tick powers LRU eviction.
+    entries: HashMap<u64, (HashMap<u16, Handle<Mesh>>, u64)>,
+    /// Monotonic access counter; every get/insert stamps and advances it.
+    clock: u64,
+    /// Entry ceiling. `None` disables eviction entirely.
+    capacity: Option<usize>,
     hits: u64,
     misses: u64,
+    evictions: u64,
+}
+
+impl Default for MeshCache {
+    fn default() -> Self {
+        Self {
+            entries: HashMap::new(),
+            clock: 0,
+            capacity: Some(DEFAULT_MESH_CACHE_CAPACITY),
+            hits: 0,
+            misses: 0,
+            evictions: 0,
+        }
+    }
 }
 
 impl MeshCache {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Constructs a cache with an explicit entry ceiling. A capacity of `0` is
+    /// raised to `1` — a cache that can hold nothing would miss on every
+    /// lookup while still paying for the bookkeeping.
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self {
+            capacity: Some(capacity.max(1)),
+            ..Self::default()
+        }
+    }
+
+    /// Constructs a cache that never evicts (the pre-0.8.2 behaviour). Prefer
+    /// a bounded cache unless the set of skeletons is known-finite.
+    pub fn unbounded() -> Self {
+        Self {
+            capacity: None,
+            ..Self::default()
+        }
+    }
+
+    /// The current entry ceiling, or `None` when eviction is disabled.
+    pub fn capacity(&self) -> Option<usize> {
+        self.capacity
+    }
+
+    /// Sets the entry ceiling, evicting immediately if the map already exceeds
+    /// it. `None` disables eviction.
+    pub fn set_capacity(&mut self, capacity: Option<usize>) {
+        self.capacity = capacity.map(|c| c.max(1));
+        self.evict_to_capacity();
     }
 
     pub fn len(&self) -> usize {
@@ -368,7 +442,8 @@ impl MeshCache {
 
     /// Drop all cached entries, releasing the underlying [`Handle<Mesh>`]
     /// references. The mesh assets are freed once no other strong handles
-    /// remain. Hit/miss counters are preserved (use [`Self::reset_stats`]).
+    /// remain. Hit/miss/eviction counters are preserved (use
+    /// [`Self::reset_stats`]).
     pub fn clear(&mut self) {
         self.entries.clear();
     }
@@ -393,16 +468,26 @@ impl MeshCache {
         self.misses
     }
 
-    /// Reset hit/miss counters without clearing entries. The cached
+    /// Cumulative entries dropped by LRU eviction since construction (or last
+    /// [`Self::reset_stats`]). A steadily climbing count means the working set
+    /// exceeds [`capacity`](Self::capacity) — raise it, or accept the re-mesh
+    /// churn.
+    pub fn evictions(&self) -> u64 {
+        self.evictions
+    }
+
+    /// Reset hit/miss/eviction counters without clearing entries. The cached
     /// [`Handle<Mesh>`]s remain live.
     pub fn reset_stats(&mut self) {
         self.hits = 0;
         self.misses = 0;
+        self.evictions = 0;
     }
 
     /// Lookup-or-build by an explicit fingerprint. Returns a clone of the
     /// cached entry on hit (incrementing `hits`), or runs `build`, inserts
-    /// the resulting handles, and returns them (incrementing `misses`).
+    /// the resulting handles, and returns them (incrementing `misses`). Both
+    /// paths refresh the entry's LRU recency.
     ///
     /// Callers driving caching outside of [`LSystemMeshBuilder::build_cached`]
     /// — e.g. mixing skeleton-derived meshes with externally-supplied ones
@@ -417,14 +502,44 @@ impl MeshCache {
     where
         F: FnOnce() -> HashMap<u16, Handle<Mesh>>,
     {
-        if let Some(handles) = self.entries.get(&fingerprint) {
+        self.clock += 1;
+        let tick = self.clock;
+        if let Some((handles, last_used)) = self.entries.get_mut(&fingerprint) {
+            *last_used = tick;
             self.hits += 1;
             return handles.clone();
         }
         self.misses += 1;
         let handles = build();
-        self.entries.insert(fingerprint, handles.clone());
+        self.entries.insert(fingerprint, (handles.clone(), tick));
+        self.evict_to_capacity();
         handles
+    }
+
+    /// Evicts least-recently-used entries until the map fits its capacity.
+    ///
+    /// Overshoots by a small margin (10% of capacity) so a steady-state
+    /// workload sitting at the ceiling does not pay an O(n) scan on every
+    /// insert.
+    fn evict_to_capacity(&mut self) {
+        let Some(cap) = self.capacity else {
+            return;
+        };
+        if self.entries.len() <= cap {
+            return;
+        }
+        let target = cap.saturating_sub(cap / 10).max(1);
+        // `len > cap >= target`, so at least one entry goes.
+        let excess = self.entries.len() - target;
+        // Ticks are unique (every access stamps a fresh clock value), so
+        // dropping everything at or below the `excess`-th oldest removes
+        // exactly `excess` entries.
+        let mut ticks: Vec<u64> = self.entries.values().map(|(_, t)| *t).collect();
+        ticks.sort_unstable();
+        let cutoff = ticks[excess - 1];
+        let before = self.entries.len();
+        self.entries.retain(|_, (_, t)| *t > cutoff);
+        self.evictions += (before - self.entries.len()) as u64;
     }
 }
 
@@ -452,18 +567,12 @@ impl LSystemMeshBuilder {
         meshes: &mut Assets<Mesh>,
     ) -> HashMap<u16, Handle<Mesh>> {
         let fingerprint = compute_fingerprint(skeleton, self.resolution);
-        if let Some(handles) = cache.entries.get(&fingerprint) {
-            cache.hits += 1;
-            return handles.clone();
-        }
-        cache.misses += 1;
-        let mesh_buckets = self.build(skeleton);
-        let handles: HashMap<u16, Handle<Mesh>> = mesh_buckets
-            .into_iter()
-            .map(|(id, mesh)| (id, meshes.add(mesh)))
-            .collect();
-        cache.entries.insert(fingerprint, handles.clone());
-        handles
+        cache.get_or_insert_with(fingerprint, || {
+            self.build(skeleton)
+                .into_iter()
+                .map(|(id, mesh)| (id, meshes.add(mesh)))
+                .collect()
+        })
     }
 }
 

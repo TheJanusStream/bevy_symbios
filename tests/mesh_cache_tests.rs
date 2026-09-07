@@ -210,3 +210,155 @@ fn get_or_insert_with_supports_external_fingerprints() {
     assert_eq!(cache.hits(), 1);
     assert_eq!(h1.get(&0).unwrap().id(), h2.get(&0).unwrap().id());
 }
+
+// ---------------------------------------------------------------------------
+// Bounding (#38): the cache used to grow without limit, and its own doc said
+// so — "call MeshCache::clear periodically ... or manage a coarser eviction
+// policy at the application layer". Every consumer that did not is why these
+// exist; on wasm a heap that grows is never handed back.
+// ---------------------------------------------------------------------------
+
+fn one_entry() -> HashMap<u16, Handle<Mesh>> {
+    let mut map = HashMap::default();
+    map.insert(0u16, Handle::<Mesh>::default());
+    map
+}
+
+#[test]
+fn the_default_cache_is_bounded() {
+    assert_eq!(
+        MeshCache::new().capacity(),
+        Some(bevy_symbios::DEFAULT_MESH_CACHE_CAPACITY),
+        "an unbounded default is what let a re-rolling session grow forever"
+    );
+    assert_eq!(MeshCache::unbounded().capacity(), None);
+    assert_eq!(MeshCache::with_capacity(64).capacity(), Some(64));
+    assert_eq!(
+        MeshCache::with_capacity(0).capacity(),
+        Some(1),
+        "a zero ceiling would miss on every lookup while still bookkeeping"
+    );
+}
+
+#[test]
+fn inserting_past_capacity_evicts_and_counts() {
+    let mut cache = MeshCache::with_capacity(10);
+    for fp in 0..10u64 {
+        cache.get_or_insert_with(fp, one_entry);
+    }
+    assert_eq!(cache.len(), 10, "at the ceiling, nothing has gone yet");
+    assert_eq!(cache.evictions(), 0);
+
+    cache.get_or_insert_with(999, one_entry);
+    assert!(
+        cache.len() <= 10,
+        "the eleventh entry must not push the map past its ceiling: {}",
+        cache.len()
+    );
+    assert!(cache.evictions() > 0, "and the drop must be reported");
+
+    // The ceiling holds no matter how much more goes in.
+    for fp in 1000..1100u64 {
+        cache.get_or_insert_with(fp, one_entry);
+    }
+    assert!(cache.len() <= 10, "len drifted to {}", cache.len());
+}
+
+#[test]
+fn eviction_takes_the_least_recently_used_not_the_oldest_inserted() {
+    let mut cache = MeshCache::with_capacity(4);
+    for fp in 0..4u64 {
+        cache.get_or_insert_with(fp, one_entry);
+    }
+    // Touch the oldest insert so it becomes the newest use.
+    cache.get_or_insert_with(0, one_entry);
+    assert_eq!(
+        cache.hits(),
+        1,
+        "precondition: that was a hit, not a rebuild"
+    );
+
+    // Overflow until the map has been forced to shed entries.
+    for fp in 100..110u64 {
+        cache.get_or_insert_with(fp, one_entry);
+    }
+    assert!(cache.evictions() > 0, "precondition: something was evicted");
+
+    // Fingerprint 1 was inserted after 0 but never touched again, so a
+    // recency-blind policy would have kept it and dropped 0.
+    let mut rebuilt = false;
+    cache.get_or_insert_with(1, || {
+        rebuilt = true;
+        one_entry()
+    });
+    assert!(
+        rebuilt,
+        "the untouched entry should have been the one to go"
+    );
+}
+
+#[test]
+fn an_unbounded_cache_still_grows_for_a_caller_that_asks_for_it() {
+    let mut cache = MeshCache::unbounded();
+    for fp in 0..2000u64 {
+        cache.get_or_insert_with(fp, one_entry);
+    }
+    assert_eq!(cache.len(), 2000);
+    assert_eq!(cache.evictions(), 0);
+}
+
+#[test]
+fn set_capacity_evicts_immediately_and_none_disables_eviction() {
+    let mut cache = MeshCache::unbounded();
+    for fp in 0..100u64 {
+        cache.get_or_insert_with(fp, one_entry);
+    }
+    assert_eq!(cache.len(), 100);
+
+    cache.set_capacity(Some(10));
+    assert!(
+        cache.len() <= 10,
+        "lowering the ceiling must take effect at once, not on the next insert: {}",
+        cache.len()
+    );
+
+    cache.set_capacity(None);
+    for fp in 200..400u64 {
+        cache.get_or_insert_with(fp, one_entry);
+    }
+    assert!(cache.len() > 10, "None must switch eviction back off");
+}
+
+#[test]
+fn build_cached_respects_the_ceiling() {
+    let mut app = test_app();
+    let mut cache = MeshCache::with_capacity(2);
+
+    for i in 0..8 {
+        let skel = make_skeleton(&[Vec3::ZERO, Vec3::Y * (i as f32 + 1.0)]);
+        let mut meshes = app.world_mut().resource_mut::<Assets<Mesh>>();
+        LSystemMeshBuilder::new().build_cached(&skel, &mut cache, &mut meshes);
+    }
+
+    assert!(
+        cache.len() <= 2,
+        "the builder's own path must evict too, not just get_or_insert_with: {}",
+        cache.len()
+    );
+    assert_eq!(cache.misses(), 8, "eight distinct skeletons, eight builds");
+    assert!(cache.evictions() > 0);
+}
+
+#[test]
+fn reset_stats_clears_evictions_too() {
+    let mut cache = MeshCache::with_capacity(2);
+    for fp in 0..20u64 {
+        cache.get_or_insert_with(fp, one_entry);
+    }
+    assert!(cache.evictions() > 0);
+    cache.reset_stats();
+    assert_eq!(cache.evictions(), 0);
+    assert_eq!(cache.hits(), 0);
+    assert_eq!(cache.misses(), 0);
+    assert!(!cache.is_empty(), "entries survive a stats reset");
+}
