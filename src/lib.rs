@@ -64,6 +64,11 @@
 //! }
 //! ```
 
+// docs.rs builds with `--cfg docsrs` on nightly, which is what puts the
+// "available on crate feature `egui`" badges on the gated modules. Inert
+// everywhere else.
+#![cfg_attr(docsrs, feature(doc_auto_cfg))]
+
 pub mod export;
 pub mod materials;
 pub mod mesher;
